@@ -13,17 +13,17 @@ from pyro import distributions as dist
 def model(data, args):
 
     if(args.autoHyperParam):
-        beta_model = pyro.param("beta_model", torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi, constraint=constraints.positive)
-        alpha_model = pyro.param("alpha_model", torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta, constraint=constraints.positive)
+        beta_hyper = pyro.param("beta_hyper", torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi, constraint=constraints.positive)
+        alpha_hyper = pyro.param("alpha_hyper", torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta, constraint=constraints.positive)
     else:
-        beta_model = torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi
-        alpha_model = torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta
+        beta_hyper = torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi
+        alpha_hyper = torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta
 
     with pyro.plate("topics", args.K):
-        phi = pyro.sample("phi", dist.Dirichlet(beta_model))
+        phi = pyro.sample("phi", dist.Dirichlet(beta_hyper))
 
     with pyro.plate("documents", args.D) as d:
-        theta = pyro.sample("theta", dist.Dirichlet(alpha_model))
+        theta = pyro.sample("theta", dist.Dirichlet(alpha_hyper))
 
         w_d = data[d] + args.eps
         w_d = w_d / torch.sum(w_d, dim=1, keepdim=True)
@@ -40,31 +40,31 @@ def model(data, args):
 
 
 def guide(data, args):
-    beta = pyro.param("beta", torch.ones([args.K, args.V], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-    alpha = pyro.param("alpha", torch.ones([args.D, args.K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+    beta_model = pyro.param("beta_model", torch.ones([args.K, args.V], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+    alpha_model = pyro.param("alpha_model", torch.ones([args.D, args.K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
 
     with pyro.plate("topics", args.K) as k:
-        phi = pyro.sample("phi", dist.Dirichlet(beta[k]))
+        phi = pyro.sample("phi", dist.Dirichlet(beta_model[k]))
     with pyro.plate("documents", args.D) as d:
-        theta = pyro.sample("theta", dist.Dirichlet(alpha[d]))
+        theta = pyro.sample("theta", dist.Dirichlet(alpha_model[d]))
 
 
 def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
-    beta = pyro.param("beta")
-    alpha = pyro.param("alpha")
-    phi = dist.Dirichlet(beta).independent(1).mean
-    theta = dist.Dirichlet(alpha).independent(1).mean
+    beta_model = pyro.param("beta_model")
+    alpha_model = pyro.param("alpha_model")
+    phi = dist.Dirichlet(beta_model).independent(1).mean
+    theta = dist.Dirichlet(alpha_model).independent(1).mean
 
-    beta_ = beta.cpu().detach().numpy()
-    alpha_ = alpha.cpu().detach().numpy()
+    beta_model_ = beta_model.cpu().detach().numpy()
+    alpha_model_ = alpha_model.cpu().detach().numpy()
     phi_ = phi.cpu().detach().numpy()
     theta_ = theta.cpu().detach().numpy()
 
     if(args.autoHyperParam):
-        beta_model = pyro.param("beta_model")
-        alpha_model = pyro.param("alpha_model")
-        beta_model_ = beta_model.cpu().detach().numpy()
-        alpha_model_ = alpha_model.cpu().detach().numpy()
+        beta_hyper = pyro.param("beta_hyper")
+        alpha_hyper = pyro.param("alpha_hyper")
+        beta_hyper_ = beta_hyper.cpu().detach().numpy()
+        alpha_hyper_ = alpha_hyper.cpu().detach().numpy()
 
     # print summary
     for k in range(args.K):
@@ -91,16 +91,17 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         # model_variables.pickle
         variables = {}
         args_dict = {k: args.__dict__[k] for k in args.__dict__ if not k.startswith("__")}
+
         variables["args"] = args_dict
         variables["words"] = words
         variables["reviews"] = reviews
-        variables["beta"] = beta_
-        variables["alpha"] = alpha_
+        variables["beta_model"] = beta_model_
+        variables["alpha_model"] = alpha_model_
         variables["phi"] = phi_
         variables["theta"] = theta_
         if(args.autoHyperParam):
-            variables["beta_model"] = beta_model_
-            variables["alpha_model"] = alpha_model_
+            variables["beta_hyper"] = beta_hyper_
+            variables["alpha_hyper"] = alpha_hyper_
         with open(pathResultFolder.joinpath("model_variables.pickle"), 'wb') as f:
             pickle.dump(variables, f)
 
@@ -108,45 +109,56 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         wb = openpyxl.Workbook()
         tmp_ws = wb[wb.get_sheet_names()[0]]
 
+        args_dict_str = args_dict.copy()
+        for k in args_dict_str:
+            if(not isinstance(args_dict_str[k], (int, float, complex, bool))):
+                args_dict_str[k] = str(args_dict_str[k])
         ws = wb.create_sheet("args")
-        writeVector(ws, list(args_dict.values()), axis="row", names=list(args_dict.keys()))
+        writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
 
-        ws = wb.create_sheet("alpha")
-        writeMatrix(ws, alpha_, 1, 1,
+        ws = wb.create_sheet("alpha_model")
+        writeMatrix(ws, alpha_model_, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(args.D)],
-                    column_names=[f"topic{k+1}" for k in range(args.K)])
+                    column_names=[f"topic{k+1}" for k in range(args.K)],
+                    addDataBar=True)
 
-        ws = wb.create_sheet("beta")
-        writeMatrix(ws, beta_.T, 1, 1,
+        ws = wb.create_sheet("beta_model")
+        writeMatrix(ws, beta_model_.T, 1, 1,
                     row_names=words,
-                    column_names=[f"topic{d+1}" for d in range(args.K)])
+                    column_names=[f"topic{d+1}" for d in range(args.K)],
+                    addDataBar=True)
 
         ws = wb.create_sheet("theta")
         writeMatrix(ws, theta_, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(args.D)],
-                    column_names=[f"topic{k+1}" for k in range(args.K)])
+                    column_names=[f"topic{k+1}" for k in range(args.K)],
+                    addDataBar=True)
 
         ws = wb.create_sheet("phi")
         writeMatrix(ws, phi_.T, 1, 1,
                     row_names=words,
-                    column_names=[f"topic{d+1}" for d in range(args.K)])
+                    column_names=[f"topic{d+1}" for d in range(args.K)],
+                    addDataBar=True)
 
         if(args.autoHyperParam):
-            ws = wb.create_sheet("beta_model")
-            writeVector(ws, beta_model_, axis="row", names=words)
+            ws = wb.create_sheet("beta_hyper")
+            writeVector(ws, beta_hyper_, axis="row", names=words,
+                        addDataBar=True)
 
-            ws = wb.create_sheet("alpha_model")
-            writeVector(ws, alpha_model_, axis="row", names=[f"topic{d+1}" for d in range(args.K)])
+            ws = wb.create_sheet("alpha_hyper")
+            writeVector(ws, alpha_hyper_, axis="row", names=[f"topic{d+1}" for d in range(args.K)],
+                        addDataBar=True)
 
         ws = wb.create_sheet("phi_sorted")
         writeSortedMatrix(ws, phi_.T, axis=0, row=1, column=1,
                           row_names=words, column_names=[f"topic{d+1}" for d in range(args.K)],
-                          maxwrite=100, order="higher",)
+                          maxwrite=100, order="higher")
 
         ws = wb.create_sheet("phi_value_sorted")
         writeSortedMatrix(ws, phi_.T, axis=0, row=1, column=1,
                           row_names=None, column_names=[f"topic{d+1}" for d in range(args.K)],
-                          maxwrite=100, order="higher",)
+                          maxwrite=100, order="higher",
+                          addDataBar=True)
 
         # if(counts is not None):
         #     phi2_ = phi_ / counts[None, :]

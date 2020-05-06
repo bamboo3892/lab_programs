@@ -1,18 +1,20 @@
 import numpy as np
 import openpyxl
 from openpyxl.styles import Font, Color
-from openpyxl.formatting.rule import ColorScale, FormatObject, Rule
+from openpyxl.formatting.rule import ColorScale, DataBar, FormatObject, Rule
+from openpyxl.utils.cell import get_column_letter
 
 
 def writeVector(ws, vector, row=1, column=1, axis="column", names=None,
                 matrix_font=None,
-                name_font=Font(color="006400")):
+                name_font=Font(color="006400"),
+                addDataBar=False):
     if(axis == "column"):
         writeMatrix(ws, [vector], row=row, column=column, column_names=names,
-                    matrix_font=matrix_font, column_name_font=name_font)
+                    matrix_font=matrix_font, column_name_font=name_font, addDataBar=addDataBar)
     elif(axis == "row"):
-        writeMatrix(ws, np.array(vector)[:, None].tolist(), row=row, column=column, row_names=names,
-                    matrix_font=matrix_font, row_name_font=name_font)
+        writeMatrix(ws, [[a] for a in vector], row=row, column=column, row_names=names,
+                    matrix_font=matrix_font, row_name_font=name_font, addDataBar=addDataBar)
     else:
         raise Exception("irregal parameter")
 
@@ -20,7 +22,8 @@ def writeVector(ws, vector, row=1, column=1, axis="column", names=None,
 def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
                 matrix_font=None,
                 row_name_font=Font(color="006400"),
-                column_name_font=Font(color="006400")):
+                column_name_font=Font(color="006400"),
+                addDataBar=False):
 
     offset_row = row if column_names is None else row + 1
     offset_column = column if row_names is None else column + 1
@@ -33,16 +36,22 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
         for i in range(len(column_names)):
             ws.cell(row, offset_column + i, column_names[i]).font = column_name_font
 
+    maxVecLength = 0
     for i in range(len(matrix)):
         vec = matrix[i]
+        maxVecLength = len(vec) if len(vec) > maxVecLength else maxVecLength
         for j in range(len(vec)):
             ws.cell(offset_row + i, offset_column + j, vec[j]).font = matrix_font
+
+    if(addDataBar):
+        addDataBarRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength)
 
 
 def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, column_names=None,
                       maxwrite=None, order="higher",
                       matrix_font=None,
-                      name_font=Font(color="006400")):
+                      name_font=Font(color="006400"),
+                      addDataBar=False):
     """
     names is none: write sorted matrix values
     names is not none: write sorted names
@@ -79,8 +88,27 @@ def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, colum
     if(axis == 0):
         writeMatrix(ws, data, row=row, column=column, column_names=column_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font)
+                    row_name_font=name_font, addDataBar=addDataBar)
     elif(axis == 1):
         writeMatrix(ws, data, row=row, column=column, row_names=row_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font)
+                    row_name_font=name_font, addDataBar=addDataBar)
+
+
+def addDataBarRules(ws, row1, row2, column1, column2, color="00bfff"):
+    if(row1 > row2):
+        a = row1
+        row1 = row2
+        row2 = a
+    if(column1 > column2):
+        a = column1
+        column1 = column2
+        column2 = a
+
+    area = getAreaLatter(row1, row2, column1, column2)
+    data_bar = DataBar(cfvo=[FormatObject(type='min'), FormatObject(type='max')], color=color, showValue=None, minLength=None, maxLength=None)
+    ws.conditional_formatting.add(area, Rule(type='dataBar', dataBar=data_bar))
+
+
+def getAreaLatter(row1, row2, column1, column2):
+    return get_column_letter(column1) + str(row1) + ":" + get_column_letter(column2) + str(row2)
