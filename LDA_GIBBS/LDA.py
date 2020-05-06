@@ -198,10 +198,10 @@ class LDA:
         """
 
         """ 1. sampleing z (Collapsed Gibbs sampling) (bottleneck)"""
-        updateZ(self.documents,
-                self.alpha, self.beta,
-                self.nWord_dk, self.nWord_kv, self.nWord_k,
-                self.z)
+        LDA_util.updateZ(self.documents,
+                         self.alpha, self.beta,
+                         self.nWord_dk, self.nWord_kv, self.nWord_k,
+                         self.z)
 
         """ 2. update alpha and beta (fixed-point iteration) """
         self.updateAlphaAndBeta()
