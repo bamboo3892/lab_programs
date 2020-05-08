@@ -169,3 +169,18 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
 
         wb.remove_sheet(tmp_ws)
         wb.save(pathResultFolder.joinpath("result.xlsx"))
+
+
+        wb = openpyxl.Workbook()
+        tmp_ws = wb[wb.get_sheet_names()[0]]
+
+        for k in range(K):
+            ws = wb.create_sheet(f"topic_{k}")
+            for r in range(R):
+                ws.cell(1, r + 1, f"r{r}")
+                idx = np.argsort(phi_[r][k])[::-1]
+                dat = np.array(words[r])[idx].tolist()
+                writeVector(ws, dat, 2, r + 1, axis="row", names=None)
+
+        wb.remove_sheet(tmp_ws)
+        wb.save(pathResultFolder.joinpath("topics.xlsx"))
