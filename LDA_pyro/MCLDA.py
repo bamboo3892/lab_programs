@@ -1,8 +1,3 @@
-"""
-Multi-Channel Latent Dirichlet Allocation
-"""
-
-
 import pickle
 import numpy as np
 import openpyxl
@@ -16,79 +11,97 @@ from pyro import distributions as dist
 
 
 def model(data, args):
+    """
+    data:
+        [tensor[D, V1], tensor[D, V2], ...]
+    args:
+        K,
+        eps
+        autoHyperParam
+        coef_beta, coef_alpha
+        device
+    """
+    R = len(data)
+    D = data[0].shape[0]
+    V = [data[r].shape[1] for r in range(R)]
+    K = args.K
 
     if(args.autoHyperParam):
-        beta_model = pyro.param("beta_model", torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi, constraint=constraints.positive)
-        alpha_model = pyro.param("alpha_model", torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta, constraint=constraints.positive)
+        alpha_hyper = pyro.param("alpha_hyper", torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha, constraint=constraints.positive)
+        beta_hyper = [0] * R
+        for r in pyro.plate("records1", R):
+            beta_hyper[r] = pyro.param(f"beta_hyper_r{r}", torch.ones([V[r]], device=args.device, dtype=torch.float64) * args.coef_beta, constraint=constraints.positive)
     else:
-        beta_model = torch.ones([args.V], device=args.device, dtype=torch.float64) * args.coef_phi
-        alpha_model = torch.ones([args.K], device=args.device, dtype=torch.float64) * args.coef_theta
+        alpha_hyper = torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha
+        beta_hyper = [0] * R
+        for r in pyro.plate("records1", R):
+            beta_hyper[r] = torch.ones([V[r]], device=args.device, dtype=torch.float64) * args.coef_beta
 
-    with pyro.plate("topics", args.K):
-        phi = pyro.sample("phi", dist.Dirichlet(beta_model))
+    for r in pyro.plate("records2", R):
+        with pyro.plate(f"topics_r{r}", K):
+            phi = pyro.sample(f"phi_r{r}", dist.Dirichlet(beta_hyper[r]))
 
-    with pyro.plate("documents", args.D) as d:
-        theta = pyro.sample("theta", dist.Dirichlet(alpha_model))
+        with pyro.plate(f"documents_r{r}", D) as d:
+            theta = pyro.sample(f"theta_r{r}", dist.Dirichlet(alpha_hyper))
 
-        w_d = data[d] + args.eps
-        w_d = w_d / torch.sum(w_d, dim=1, keepdim=True)
+            w_d = data[r][d] + args.eps
+            w_d = w_d / torch.sum(w_d, dim=1, keepdim=True)
 
-        p = torch.mm(theta, phi)  # [D, V]
-        N = torch.sum(data[d], dim=1)  # [D]
-        p = p * N[:, None] + 1  # Dirichlet(p)は最頻値(極大値)がp(w)になる分布
-        w = pyro.sample("w", dist.Dirichlet(p), obs=w_d)
-
-        # p = torch.mm(theta, phi)  # [D, V]
-        # w = pyro.sample("w", dist.Delta(p, event_dim=1), obs=w_d)
+            p = torch.mm(theta, phi)  # [D, V]
+            N = torch.sum(data[r][d], dim=1)  # [D]
+            p = p * N[:, None] + 1  # Dirichlet(p)は最頻値(極大値)がp(w)になる分布
+            w = pyro.sample(f"w_r{r}", dist.Dirichlet(p), obs=w_d)
 
     return phi, theta, w
 
 
 def guide(data, args):
-    beta = pyro.param("beta", torch.ones([args.K, args.V], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-    alpha = pyro.param("alpha", torch.ones([args.D, args.K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+    R = len(data)
+    D = data[0].shape[0]
+    V = [data[r].shape[1] for r in range(R)]
+    K = args.K
 
-    with pyro.plate("topics", args.K) as k:
-        phi = pyro.sample("phi", dist.Dirichlet(beta[k]))
-    with pyro.plate("documents", args.D) as d:
-        theta = pyro.sample("theta", dist.Dirichlet(alpha[d]))
+    alpha_model = pyro.param("alpha_model", torch.ones([D, K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+    beta_model = [0] * R
+    for r in pyro.plate("records1", R):
+        beta_model[r] = pyro.param(f"beta_model_r{r}", torch.ones([K, V[r]], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+
+    for r in pyro.plate("records2", R):
+        with pyro.plate(f"topics_r{r}", K) as k:
+            phi = pyro.sample(f"phi_r{r}", dist.Dirichlet(beta_model[r][k]))
+        with pyro.plate(f"documents_r{r}", D) as d:
+            theta = pyro.sample(f"theta_r{r}", dist.Dirichlet(alpha_model[d]))
 
 
 def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
-    beta = pyro.param("beta")
-    alpha = pyro.param("alpha")
-    phi = dist.Dirichlet(beta).independent(1).mean
-    theta = dist.Dirichlet(alpha).independent(1).mean
+    R = len(data)
+    D = data[0].shape[0]
+    V = [data[r].shape[1] for r in range(R)]
+    K = args.K
 
-    beta_ = beta.cpu().detach().numpy()
-    alpha_ = alpha.cpu().detach().numpy()
-    phi_ = phi.cpu().detach().numpy()
+    alpha_model = pyro.param("alpha_model")
+    alpha_model_ = alpha_model.cpu().detach().numpy()
+    theta = dist.Dirichlet(alpha_model).independent(1).mean
     theta_ = theta.cpu().detach().numpy()
 
-    if(args.autoHyperParam):
-        beta_model = pyro.param("beta_model")
-        alpha_model = pyro.param("alpha_model")
-        beta_model_ = beta_model.cpu().detach().numpy()
-        alpha_model_ = alpha_model.cpu().detach().numpy()
+    beta_model = [0] * R
+    beta_model_ = [0] * R
+    phi = [0] * R
+    phi_ = [0] * R
+    for r in range(R):
+        beta_model[r] = pyro.param(f"beta_model_r{r}")
+        beta_model_[r] = beta_model[r].cpu().detach().numpy()
+        phi[r] = dist.Dirichlet(beta_model[r]).independent(1).mean
+        phi_[r] = phi[r].cpu().detach().numpy()
 
-    # print summary
-    for k in range(args.K):
-        msg = "Topic {:2d}: ".format(k)
-        ind = np.argsort(phi_[k, :])[::-1]
-        for i in range(10):
-            msg += "{} ".format(words[ind[i]])
-        print(msg)
-    for k in range(args.K):
-        msg = "Topic {:2d}: ".format(k)
-        ind = np.argsort(phi_[k, :])[::-1]
-        for i in range(10):
-            msg += "{:6f} ".format(phi_[k, ind[i]])
-        print(msg)
-    for d in range(3):
-        msg = "Documents {:2d}: ".format(d)
-        for k in range(args.K):
-            msg += "{:6f} ".format(theta_[d, k])
-        print(msg)
+    if(args.autoHyperParam):
+        alpha_hyper = pyro.param("alpha_hyper")
+        alpha_hyper_ = alpha_hyper.cpu().detach().numpy()
+        beta_hyper = [0] * R
+        beta_hyper_ = [0] * R
+        for r in range(R):
+            beta_hyper[r] = pyro.param(f"beta_hyper_r{r}")
+            beta_hyper_[r] = beta_hyper[r].cpu().detach().numpy()
 
     if(pathResultFolder is not None):
         print("saving models")
@@ -96,16 +109,17 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         # model_variables.pickle
         variables = {}
         args_dict = {k: args.__dict__[k] for k in args.__dict__ if not k.startswith("__")}
+
         variables["args"] = args_dict
         variables["words"] = words
         variables["reviews"] = reviews
-        variables["beta"] = beta_
-        variables["alpha"] = alpha_
+        variables["beta_model"] = beta_model_
+        variables["alpha_model"] = alpha_model_
         variables["phi"] = phi_
         variables["theta"] = theta_
         if(args.autoHyperParam):
-            variables["beta_model"] = beta_model_
-            variables["alpha_model"] = alpha_model_
+            variables["beta_hyper"] = beta_hyper_
+            variables["alpha_hyper"] = alpha_hyper_
         with open(pathResultFolder.joinpath("model_variables.pickle"), 'wb') as f:
             pickle.dump(variables, f)
 
@@ -113,57 +127,45 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         wb = openpyxl.Workbook()
         tmp_ws = wb[wb.get_sheet_names()[0]]
 
+        args_dict_str = args_dict.copy()
+        for k in args_dict_str:
+            if(not isinstance(args_dict_str[k], (int, float, complex, bool))):
+                args_dict_str[k] = str(args_dict_str[k])
         ws = wb.create_sheet("args")
-        writeVector(ws, list(args_dict.values()), axis="row", names=list(args_dict.keys()))
+        writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
 
-        ws = wb.create_sheet("alpha")
-        writeMatrix(ws, alpha_, 1, 1,
-                    row_names=[f"doc{d+1}" for d in range(args.D)],
-                    column_names=[f"topic{k+1}" for k in range(args.K)])
+        if(args.autoHyperParam):
+            ws = wb.create_sheet("alpha_hyper")
+            writeVector(ws, alpha_hyper_, axis="row", names=[f"topic{d+1}" for d in range(K)],
+                        addDataBar=True)
 
-        ws = wb.create_sheet("beta")
-        writeMatrix(ws, beta_.T, 1, 1,
-                    row_names=words,
-                    column_names=[f"topic{d+1}" for d in range(args.K)])
+            ws = wb.create_sheet("beta_hyper")
+            for r in range(R):
+                writeVector(ws, beta_hyper_[r], column=r * 3 + 1,
+                            axis="row", names=words[r],
+                            addDataBar=True)
 
         ws = wb.create_sheet("theta")
         writeMatrix(ws, theta_, 1, 1,
-                    row_names=[f"doc{d+1}" for d in range(args.D)],
-                    column_names=[f"topic{k+1}" for k in range(args.K)])
+                    row_names=[f"doc{d+1}" for d in range(D)],
+                    column_names=[f"topic{k+1}" for k in range(K)],
+                    addDataBar=True)
 
-        ws = wb.create_sheet("phi")
-        writeMatrix(ws, phi_.T, 1, 1,
-                    row_names=words,
-                    column_names=[f"topic{d+1}" for d in range(args.K)])
+        for r in range(R):
+            ws = wb.create_sheet(f"phi_r{r}")
+            writeMatrix(ws, phi_[r].T, 1, 1,
+                        row_names=words[r],
+                        column_names=[f"topic{k+1}" for k in range(K)],
+                        addDataBar=True)
 
-        if(args.autoHyperParam):
-            ws = wb.create_sheet("beta_model")
-            writeVector(ws, beta_model_, axis="row", names=words)
-
-            ws = wb.create_sheet("alpha_model")
-            writeVector(ws, alpha_model_, axis="row", names=[f"topic{d+1}" for d in range(args.K)])
-
-        ws = wb.create_sheet("phi_sorted")
-        writeSortedMatrix(ws, phi_.T, axis=0, row=1, column=1,
-                          row_names=words, column_names=[f"topic{d+1}" for d in range(args.K)],
-                          maxwrite=100, order="higher",)
-
-        ws = wb.create_sheet("phi_value_sorted")
-        writeSortedMatrix(ws, phi_.T, axis=0, row=1, column=1,
-                          row_names=None, column_names=[f"topic{d+1}" for d in range(args.K)],
-                          maxwrite=100, order="higher",)
-
-        # if(counts is not None):
-        #     phi2_ = phi_ / counts[None, :]
-        #     ws = wb.create_sheet("phi(per num)_sorted")
-        #     writeSortedMatrix(ws, phi2_.T, axis=0, row=1, column=1,
-        #                       row_names=words, column_names=[f"topic{d+1}" for d in range(args.K)],
-        #                       maxwrite=100, order="higher",)
-
-        #     ws = wb.create_sheet("phi(per num)_value_sorted")
-        #     writeSortedMatrix(ws, phi2_.T, axis=0, row=1, column=1,
-        #                       row_names=None, column_names=[f"topic{d+1}" for d in range(args.K)],
-        #                       maxwrite=100, order="higher",)
+            ws = wb.create_sheet(f"phi_r{r}_sorted")
+            writeSortedMatrix(ws, phi_[r].T, axis=0, row=1, column=1,
+                              row_names=words[r], column_names=[f"topic{k+1}" for k in range(K)],
+                              maxwrite=100, order="higher")
+            writeSortedMatrix(ws, phi_[r].T, axis=0, row=1, column=K + 3,
+                              row_names=None, column_names=[f"topic{k+1}" for k in range(K)],
+                              maxwrite=100, order="higher",
+                              addDataBar=True)
 
         wb.remove_sheet(tmp_ws)
         wb.save(pathResultFolder.joinpath("result.xlsx"))

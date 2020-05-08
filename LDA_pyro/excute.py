@@ -16,6 +16,7 @@ import LDA_pyro.sepSW_update_model as sepSW2
 import LDA_pyro.sNTD as sNTD
 import LDA_pyro.sNTD_update_model as sNTD2
 import LDA_pyro.eLLDA as eLLDA
+import LDA_pyro.MCLDA as MCLDA
 
 
 seed = 1
@@ -33,12 +34,10 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
     if(modelType == "LDA" or modelType == "LDA_auto"):
         args.num_steps = 200
         args.learning_rate = 0.2
-        args.D = bow.shape[0]
         args.K = 7
-        args.V = bow.shape[1]
         args.autoHyperParam = (modelType == "LDA_auto")
-        args.coef_phi = 1
-        args.coef_theta = 1  # 大きいほうが同じようなトピックが形成される感じ
+        args.coef_beta = 1
+        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
         args.eps = 0.001
 
         data = bow
@@ -46,9 +45,9 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
         guide = LDA.guide
         summary = LDA.summary
         if(not args.autoHyperParam):
-            print(f"coef_phi:   {args.coef_phi}")
-            print(f"coef_theta: {args.coef_theta}")
-        elif(modelType == "LDA_auto"):
+            print(f"coef_beta:   {args.coef_beta}")
+            print(f"coef_alpha: {args.coef_alpha}")
+        else:
             print("Hyper parameter auto adapted")
 
     elif(modelType == "sepSW"):
@@ -127,6 +126,25 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
         guide = eLLDA.guide
         summary = eLLDA.summary
 
+    elif(modelType == "MCLDA" or modelType == "MCLDA_auto"):
+        args.num_steps = 200
+        args.learning_rate = 0.2
+        args.K = 7
+        args.autoHyperParam = (modelType == "MCLDA_auto")
+        args.coef_beta = 1
+        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
+        args.eps = 0.001
+
+        data = bow
+        model = MCLDA.model
+        guide = MCLDA.guide
+        summary = MCLDA.summary
+        if(not args.autoHyperParam):
+            print(f"coef_beta:   {args.coef_beta}")
+            print(f"coef_alpha: {args.coef_alpha}")
+        else:
+            print("Hyper parameter auto adapted")
+
     # SVI
     svi = SVI(model=model,
               guide=guide,
@@ -178,3 +196,13 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
             words = tensors[key + "_words"]
             counts = tensors[key + "_counts"]
             excuteFromData(modelType, bow, words, docs, pathResult.joinpath(key), counts=counts)
+
+    elif(modelType == "MCLDA" or modelType == "MCLDA_auto"):
+        bows = []
+        words = []
+        counts = []
+        for key in keys:
+            bows.append(torch.tensor(tensors[key], device=DEVICE))
+            words.append(tensors[key + "_words"])
+            counts.append(tensors[key + "_counts"])
+        excuteFromData(modelType, bows, words, docs, pathResult, counts=counts)

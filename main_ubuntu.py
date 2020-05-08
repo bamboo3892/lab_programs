@@ -62,7 +62,8 @@ if __name__ == '__main__':
 
     b16 = False  # execute sepReviewsToMorphomes for multi channel?
     b17 = False  # makeTensor2 for multi channel
-    b18 = True  # excute LDA to individual channel
+    b18 = False  # excute LDA to individual channel
+    b19 = True  # excute MCLDA
 
     b11 = False  # HC statistics
 
@@ -288,10 +289,16 @@ if __name__ == '__main__':
             print("")
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
-    result_multi_channel = RESULT.joinpath("multi_channel", "LDA", "tmp")
     if(b18):
         f0 = time.time()
-        LDA_pyro.excute.excuteLDAForMultiChannel("LDA_auto", tensors[2], morphomes[2], result_multi_channel)
+        LDA_pyro.excute.excuteLDAForMultiChannel("LDA_auto", tensors[2], morphomes[2],
+                                                 RESULT.joinpath("multi_channel", "LDA", "tmp"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b19):
+        f0 = time.time()
+        LDA_pyro.excute.excuteLDAForMultiChannel("MCLDA_auto", tensors[2], morphomes[2],
+                                                 RESULT.joinpath("multi_channel", "MCLDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 
