@@ -13,77 +13,93 @@ from pyro import distributions as dist
 def model(data, args):
     """
     data:
-        tensor[D, V]
+        [tensor[totalN] (word id),
+         tensor[totalN] (doc id)]
     args:
         K,
-        eps,
-        auto_beta, auto_alpha,
-        coef_beta, coef_alpha,
+        auto_beta, auto_alpha
+        coef_beta, coef_alpha
         device
     """
-    D = data.shape[0]
-    V = data.shape[1]
+    D = args.D
+    V = args.V
+    totalN = len(data[0])
     K = args.K
 
     if(args.auto_beta):
         beta_hyper = pyro.param("beta_hyper", torch.ones([V], device=args.device, dtype=torch.float64) * args.coef_beta, constraint=constraints.positive)
     else:
         beta_hyper = torch.ones([V], device=args.device, dtype=torch.float64) * args.coef_beta
-
     if(args.auto_alpha):
         alpha_hyper = pyro.param("alpha_hyper", torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha, constraint=constraints.positive)
     else:
         alpha_hyper = torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha
 
+    # phi, theta = calcPhiAndTheta(data, D, V, K, alpha_hyper, beta_hyper, args.device)
+    # theta, phi 生成
     with pyro.plate("topics", K):
         phi = pyro.sample("phi", dist.Dirichlet(beta_hyper))
-
-    with pyro.plate("documents", D) as d:
+    with pyro.plate("documents", D):
         theta = pyro.sample("theta", dist.Dirichlet(alpha_hyper))
 
-        w_d = data[d] + args.eps
-        w_d = w_d / torch.sum(w_d, dim=1, keepdim=True)
+    with pyro.plate("words", totalN, subsample_size=10000) as n:
+        wordID = data[0][n].long()
+        docID = data[1][n].long()
+        z = pyro.sample("z", dist.Categorical(theta[docID]))
+        w = pyro.sample("w", dist.Categorical(phi[z]), obs=wordID)
 
-        p = torch.mm(theta, phi)  # [D, V]
-        N = torch.sum(data[d], dim=1)  # [D]
-        p = p * N[:, None] + 1  # Dirichlet(p)は最頻値(極大値)がp(w)になる分布
-        w = pyro.sample("w", dist.Dirichlet(p), obs=w_d)
-
-        # p = torch.mm(theta, phi)  # [D, V]
-        # w = pyro.sample("w", dist.Delta(p, event_dim=1), obs=w_d)
-
-    return phi, theta, w
+    return phi, theta, z, w
 
 
 def guide(data, args):
-    D = data.shape[0]
-    V = data.shape[1]
+    D = args.D
+    V = args.V
+    totalN = len(data[0])
     K = args.K
 
-    beta_model = pyro.param("beta_model", torch.ones([K, V], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-    with pyro.plate("topics", K) as k:
-        phi = pyro.sample("phi", dist.Dirichlet(beta_model[k]))
+    if(args.auto_beta):
+        beta_hyper = pyro.param("beta_hyper", torch.ones([V], device=args.device, dtype=torch.float64) * args.coef_beta, constraint=constraints.positive)
+    else:
+        beta_hyper = torch.ones([V], device=args.device, dtype=torch.float64) * args.coef_beta
+    if(args.auto_alpha):
+        alpha_hyper = pyro.param("alpha_hyper", torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha, constraint=constraints.positive)
+    else:
+        alpha_hyper = torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha
 
-    alpha_model = pyro.param("alpha_model", torch.ones([D, K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-    with pyro.plate("documents", D) as d:
-        theta = pyro.sample("theta", dist.Dirichlet(alpha_model[d]))
+    # theta, phi 近似分布を使わずに生成
+    with pyro.plate("topics", K):
+        phi = pyro.sample("phi", dist.Dirichlet(beta_hyper))
+    with pyro.plate("documents", D):
+        theta = pyro.sample("theta", dist.Dirichlet(alpha_hyper))
+
+    q_model = pyro.param("q_model", torch.ones([totalN, K], device=args.device, dtype=torch.float32) / K, constraint=constraints.simplex)
+    with pyro.plate("words", totalN, subsample_size=10000) as n:
+        z = pyro.sample("z", dist.Categorical(q_model[n]))
+
+
+def calcPhiAndTheta(data, D, V, K, alpha_hyper, beta_hyper, device):
+    q_model = pyro.param("q_model")
+    totalN = len(data[0])
+
+    phi = torch.zeros((K, V), device=device)
+    theta = torch.zeros((D, K), device=device)
+
+    for v in range(V):
+        phi[:, v] = torch.sum(q_model[data[0] == v, :], 0) + beta_hyper[v]
+    for d in range(D):
+        theta[d, :] = torch.sum(q_model[data[1] == d, :], 0) + alpha_hyper
+
+    phi = phi / torch.sum(phi, 1, keepdim=True)
+    theta = theta / torch.sum(theta, 1, keepdim=True)
+
+    return phi, theta
 
 
 def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
 
-    D = data.shape[0]
-    V = data.shape[1]
+    D = args.D
+    V = args.V
     K = args.K
-
-    beta_model = pyro.param("beta_model")
-    alpha_model = pyro.param("alpha_model")
-    phi = dist.Dirichlet(beta_model).independent(1).mean
-    theta = dist.Dirichlet(alpha_model).independent(1).mean
-
-    beta_model_ = beta_model.cpu().detach().numpy()
-    alpha_model_ = alpha_model.cpu().detach().numpy()
-    phi_ = phi.cpu().detach().numpy()
-    theta_ = theta.cpu().detach().numpy()
 
     if(args.auto_beta):
         beta_hyper = pyro.param("beta_hyper")
@@ -95,6 +111,10 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         alpha_hyper_ = alpha_hyper.cpu().detach().numpy()
     else:
         alpha_hyper_ = np.ones(K) * args.coef_alpha
+
+    phi, theta = calcPhiAndTheta(data, D, V, K, alpha_hyper, beta_hyper, args.device)
+    phi_ = phi.cpu().detach().numpy()
+    theta_ = theta.cpu().detach().numpy()
 
     # print summary
     for k in range(K):
@@ -125,8 +145,6 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         variables["args"] = args_dict
         variables["words"] = words
         variables["reviews"] = reviews
-        variables["beta_model"] = beta_model_
-        variables["alpha_model"] = alpha_model_
         variables["phi"] = phi_
         variables["theta"] = theta_
         variables["beta_hyper"] = beta_hyper_
@@ -145,18 +163,6 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         ws = wb.create_sheet("args")
         writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
 
-        ws = wb.create_sheet("alpha_model")
-        writeMatrix(ws, alpha_model_, 1, 1,
-                    row_names=[f"doc{d+1}" for d in range(D)],
-                    column_names=[f"topic{k+1}" for k in range(K)],
-                    addDataBar=True)
-
-        ws = wb.create_sheet("beta_model")
-        writeMatrix(ws, beta_model_.T, 1, 1,
-                    row_names=words,
-                    column_names=[f"topic{d+1}" for d in range(K)],
-                    addDataBar=True)
-
         ws = wb.create_sheet("theta")
         writeMatrix(ws, theta_, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(D)],
@@ -169,12 +175,12 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
                     column_names=[f"topic{d+1}" for d in range(K)],
                     addDataBar=True)
 
-        ws = wb.create_sheet("alpha_hyper")
-        writeVector(ws, alpha_hyper_, axis="row", names=[f"topic{d+1}" for d in range(K)],
-                    addDataBar=True)
-
         ws = wb.create_sheet("beta_hyper")
         writeVector(ws, beta_hyper_, axis="row", names=words,
+                    addDataBar=True)
+
+        ws = wb.create_sheet("alpha_hyper")
+        writeVector(ws, alpha_hyper_, axis="row", names=[f"topic{d+1}" for d in range(K)],
                     addDataBar=True)
 
         ws = wb.create_sheet("phi_sorted")

@@ -4,13 +4,16 @@ import json
 import numpy as np
 import torch
 import pyro
-from pyro.optim import Adam
+from pyro.optim import Adam, SGD
 from pyro.infer import SVI, Trace_ELBO
 from pyro.infer import MCMC, NUTS
 from pyro import distributions as dist
 import matplotlib.pyplot as plt
 
 import LDA_pyro.LDA as LDA
+import LDA_pyro.LDA_original as LDA_original
+import LDA_pyro.LDA_mcmc as LDA_mcmc
+import LDA_pyro.LDA_original_collapsed as LDA_original_collapsed
 import LDA_pyro.sepSW as sepSW
 import LDA_pyro.sepSW_update_model as sepSW2
 import LDA_pyro.sNTD as sNTD
@@ -25,30 +28,63 @@ np.random.seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
+def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
+                   args=type("args", (object,), {})):
 
-    args = type("args", (object,), {})
+    pathResult.mkdir(exist_ok=True, parents=True)
+    inference = "svi"
     args.modelType = modelType
     args.device = DEVICE
 
-    if(modelType == "LDA" or modelType == "LDA_auto"):
+    if(modelType == "LDA"):
         args.num_steps = 200
         args.learning_rate = 0.2
         args.K = 7
-        args.autoHyperParam = (modelType == "LDA_auto")
+        args.auto_beta = True
+        args.auto_alpha = True
         args.coef_beta = 1
-        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
-        args.eps = 0.001
+        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ?
+        args.eps = 0.00001
 
         data = bow
         model = LDA.model
         guide = LDA.guide
         summary = LDA.summary
-        if(not args.autoHyperParam):
-            print(f"coef_beta:   {args.coef_beta}")
-            print(f"coef_alpha: {args.coef_alpha}")
-        else:
-            print("Hyper parameter auto adapted")
+        print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
+        print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
+
+    if(modelType == "LDA_original"):
+        words, data = _func0(docs, "morphomes", DEVICE)
+
+        args.num_steps = 100
+        args.learning_rate = 0.1
+        args.D = (data[1][len(data[1]) - 1] + 1).cpu().detach().numpy().tolist()
+        args.V = len(words)
+        args.K = 7
+        args.auto_beta = False
+        args.auto_alpha = False
+        args.coef_beta = 1
+        args.coef_alpha = 1
+
+        model = LDA_original.model
+        guide = LDA_original.guide
+        summary = LDA_original.summary
+
+    if(modelType == "LDA_mcmc"):
+        words, data = _func0(docs, "morphomes", DEVICE)
+
+        args.jit = True
+        args.D = (data[1][len(data[1]) - 1] + 1).cpu().detach().numpy().tolist()
+        args.V = len(words)
+        args.K = 7
+        args.auto_beta = False
+        args.auto_alpha = False
+        args.coef_beta = 1
+        args.coef_alpha = 1
+
+        inference = "mcmc"
+        model = LDA_mcmc.model
+        summary = LDA_mcmc.summary
 
     elif(modelType == "sepSW"):
         seasons = torch.tensor([int(review["season"]) for review in docs])
@@ -126,14 +162,14 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
         guide = eLLDA.guide
         summary = eLLDA.summary
 
-    elif(modelType == "MCLDA" or modelType == "MCLDA_auto"):
+    elif(modelType == "MCLDA"):
         args.num_steps = 200
         args.learning_rate = 0.2
-        args.K = 7
-        args.autoHyperParam = (modelType == "MCLDA_auto")
+        args.K = 5
+        args.autoHyperParam = True
         args.coef_beta = 1
         args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
-        args.eps = 0.001
+        args.eps = 0.01
 
         data = bow
         model = MCLDA.model
@@ -145,25 +181,48 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None):
         else:
             print("Hyper parameter auto adapted")
 
-    # SVI
-    svi = SVI(model=model,
-              guide=guide,
-              optim=Adam({"lr": args.learning_rate}),
-              loss=Trace_ELBO())
-    pyro.clear_param_store()
-    losses = []
-    for i in range(args.num_steps):
-        loss = svi.step(data, args=args)
-        losses.append(loss)
-        if((i + 1) % 10 == 0):
-            print("i:{:<5d} loss:{:<f}".format(i + 1, loss))
+    if(inference == "svi"):
+        # SVI
+        svi = SVI(model=model,
+                  guide=guide,
+                  optim=Adam({"lr": args.learning_rate}),
+                  #   optim=SGD({"lr": 0.1}),
+                  loss=Trace_ELBO())
+        pyro.clear_param_store()
 
-    pathResult.mkdir(exist_ok=True, parents=True)
+        i = 0
+        losses = []
+        while(True):
+            loss = svi.step(data, args=args)
+            losses.append(loss)
+            # if((i + 1) % 10 == 0):
+            #     print("i:{:<5d} loss:{:<f}".format(i + 1, loss))
+            # p = pathResult.joinpath(f"{i+1}")
+            # p.mkdir(exist_ok=True, parents=True)
+            # summary(data, args, words, docs, p, counts=counts)
+
+            i += 1
+            if(args.num_steps is not None):
+                if(i >= args.num_steps):
+                    break
+            else:
+                # TODO 収束判定
+                break
+
+        plt.plot(losses)
+        plt.savefig(pathResult.joinpath("loss.png"))
+        plt.clf()
+
+    elif(inference == "mcmc"):
+        nuts_kernel = NUTS(model, jit_compile=args.jit)
+        mcmc = MCMC(nuts_kernel,
+                    num_samples=1000,
+                    # warmup_steps=args.warmup_steps,
+                    num_chains=7
+                    )
+        mcmc.run(data, args)
+
     summary(data, args, words, docs, pathResult, counts=counts)
-
-    plt.plot(losses)
-    plt.savefig(pathResult.joinpath("loss.png"))
-    plt.clf()
 
     print("")
 
@@ -176,9 +235,19 @@ def excuteLDAFromPath(modelType, pathTensor, pathWords, pathDocs, pathResult):
         words = f.readline().split("\t")
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         docs = json.load(f)
-    bow = torch.tensor(bow)
+    bow = torch.tensor(bow, device=DEVICE)
 
     excuteFromData(modelType, bow, words, docs, pathResult)
+
+    # args = type("args", (object,), {})
+    # for i in range(3):
+    #     for j in range(3):
+    #         args.coef_beta = [0.1, 1, 10][i]
+    #         args.coef_alpha = [0.1, 1, 10][j]
+
+    #         excuteFromData(modelType, bow, words, docs,
+    #                        pathResult.joinpath(f"b{args.coef_beta}f_a{args.coef_alpha}f"),
+    #                        args=args)
 
 
 def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
@@ -190,14 +259,16 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
 
     keys = tensors["tensor_keys"]
 
-    if(modelType == "LDA" or modelType == "LDA_auto"):
+    if(modelType == "LDA"):
         for key in keys:
+            print(f"key: {key}")
             bow = torch.tensor(tensors[key], device=DEVICE)
             words = tensors[key + "_words"]
             counts = tensors[key + "_counts"]
             excuteFromData(modelType, bow, words, docs, pathResult.joinpath(key), counts=counts)
+            return
 
-    elif(modelType == "MCLDA" or modelType == "MCLDA_auto"):
+    elif(modelType == "MCLDA"):
         bows = []
         words = []
         counts = []
@@ -206,3 +277,22 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
             words.append(tensors[key + "_words"])
             counts.append(tensors[key + "_counts"])
         excuteFromData(modelType, bows, words, docs, pathResult, counts=counts)
+
+
+def _func0(docs, morphomes_key, device):
+    words = []
+    data0 = []  # word id
+    data1 = []  # doc id
+    for d, doc in enumerate(docs):
+        if(d >= 3000):
+            break
+        sentences = doc[morphomes_key]
+        for sentence in sentences:
+            for word in sentence:
+                if(word not in words):
+                    words.append(word)
+                data0.append(words.index(word))
+                data1.append(d)
+
+    return words, [torch.tensor(data0, dtype=torch.int16, device=device),
+                   torch.tensor(data1, dtype=torch.int16, device=device)]

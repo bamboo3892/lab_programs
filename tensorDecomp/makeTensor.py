@@ -145,7 +145,8 @@ def makeTensor3_golf(pathMorphomes, pathTensor, *, morphomesKey="morphomes"):
         output.write(text)
 
 
-def makeTensorForMultiChannel(pathMorphomes, pathTensorPickle, morphomesKeys, *,
+def makeTensorForMultiChannel(pathMorphomes, pathTensorPickle, morphomesKeys,
+                              *,
                               midKey="m_id"):
 
     print("Start making tensors for multi channel")

@@ -46,6 +46,7 @@ if __name__ == '__main__':
     b0 = False  # execute formReviewToJson?
     b1 = False  # execute sepReviewsToMorphomes?
     b2 = False  # excute LDA(gibbs)?
+    b20 = True  # excute LDA_pyro?
     b3 = False  # excute sLDA?
     b4 = False  # excute LLDA
     b5 = False  # excute analyze
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     b16 = False  # execute sepReviewsToMorphomes for multi channel?
     b17 = False  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
-    b19 = True  # excute MCLDA
+    b19 = False  # excute MCLDA
 
     b11 = False  # HC statistics
 
@@ -143,6 +144,25 @@ if __name__ == '__main__':
                                   w2vModel=gensim.models.Word2Vec.load(str(DICTIONARY.joinpath("ja.bin"))))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
+    if(b20):
+        f0 = time.time()
+        LDA_pyro.excute.excuteLDAFromPath("LDA",
+                                          TENSOR.joinpath("tensor2", "matrix.pickle"),
+                                          TENSOR.joinpath("tensor2", "words.dat"),
+                                          MORPHOMES.joinpath("sompo1_10000.json"),
+                                          RESULT.joinpath("p_r_tgtset_explan", "pyro", "LDA", "tmp"))
+        # LDA_pyro.excute.excuteLDAFromPath("LDA_original",
+        #                                   TENSOR.joinpath("tensor2", "matrix.pickle"),
+        #                                   TENSOR.joinpath("tensor2", "words.dat"),
+        #                                   MORPHOMES.joinpath("sompo1_10000.json"),
+        #                                   RESULT.joinpath("p_r_tgtset_explan", "pyro", "LDA_original"))
+        # LDA_pyro.excute.excuteLDAFromPath("LDA_mcmc",
+        #                                   TENSOR.joinpath("tensor2", "matrix.pickle"),
+        #                                   TENSOR.joinpath("tensor2", "words.dat"),
+        #                                   MORPHOMES.joinpath("sompo1_10000.json"),
+        #                                   RESULT.joinpath("p_r_tgtset_explan", "pyro", "LDA_mcmc"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
     if(b3):
         f0 = time.time()
         sLDA_GIBBS.example.testSLDA(MORPHOMES.joinpath("sompo1_30000.json"),
@@ -159,8 +179,7 @@ if __name__ == '__main__':
         #                             resultLLDA,
         #                             w2vModel=gensim.models.Word2Vec.load(str(DICTIONARY.joinpath("ja.bin"))),
         #                             fromPickle=False)
-        resultLLDA = RESULT.joinpath(
-            "ano_p_r_message", "sompo_message", "LLDAS30_100", "LLDAS30_1")
+        resultLLDA = RESULT.joinpath("ano_p_r_message", "sompo_message", "LLDAS30_100", "LLDAS30_1")
         LLDA_GIBBS.example.testLLDA(MORPHOMES.joinpath("sompo_message.json"),
                                     MORPHOMES.joinpath("sompo_message_1000.json"),
                                     resultLLDA,
@@ -176,6 +195,7 @@ if __name__ == '__main__':
                                        #    ANALYSIS_HEALTH_CHECK.joinpath("anova_p.csv")
                                        )
         print("(processed time: {:<.2f})".format(time.time() - f0))
+
 
     # --------------------------------------------------------- TENSOR ---------------------------------------------------------
 
@@ -291,13 +311,13 @@ if __name__ == '__main__':
 
     if(b18):
         f0 = time.time()
-        LDA_pyro.excute.excuteLDAForMultiChannel("LDA_auto", tensors[2], morphomes[2],
+        LDA_pyro.excute.excuteLDAForMultiChannel("LDA", tensors[2], morphomes[2],
                                                  RESULT.joinpath("multi_channel", "LDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b19):
         f0 = time.time()
-        LDA_pyro.excute.excuteLDAForMultiChannel("MCLDA_auto", tensors[2], morphomes[2],
+        LDA_pyro.excute.excuteLDAForMultiChannel("MCLDA", tensors[2], morphomes[2],
                                                  RESULT.joinpath("multi_channel", "MCLDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 

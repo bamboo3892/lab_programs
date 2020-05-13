@@ -106,7 +106,7 @@ def addDataBarRules(ws, row1, row2, column1, column2, color="00bfff"):
         column2 = a
 
     area = getAreaLatter(row1, row2, column1, column2)
-    data_bar = DataBar(cfvo=[FormatObject(type='min'), FormatObject(type='max')], color=color, showValue=None, minLength=None, maxLength=None)
+    data_bar = DataBar(cfvo=[FormatObject(type='min'), FormatObject(type='max')], color=color, showValue=None, minLength=0, maxLength=100)
     ws.conditional_formatting.add(area, Rule(type='dataBar', dataBar=data_bar))
 
 
