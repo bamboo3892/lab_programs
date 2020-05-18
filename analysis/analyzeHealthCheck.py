@@ -4,14 +4,19 @@ import statsmodels.api as sm
 from statsmodels.formula.api import ols
 import csv
 import openpyxl
+import datetime
 
 
 # 年齢, メタボリックシンドローム判定
-dataLabels = ["体重", "腹囲", "ＢＭＩ",
-              "空腹時血糖", "ＨｂＡ１ｃ（ＮＧＳＰ）",
-              "拡張期血圧", "収縮期血圧",
-              "中性脂肪", "ＨＤＬコレステロール", "ＬＤＬコレステロール",
-              "γ－ＧＴ（γ－ＧＴＰ）", "ＧＯＴ（ＡＳＴ）", "ＧＰＴ（ＡＬＴ）"]
+otherLabels = ["m_id", "年齢", "性別", "健診受診日"]
+dataLabels = [
+    "体重", "腹囲", "ＢＭＩ",
+    # "空腹時血糖",  # 欠損多い
+    "ＨｂＡ１ｃ（ＮＧＳＰ）",
+    "拡張期血圧", "収縮期血圧",
+    "中性脂肪", "ＨＤＬコレステロール", "ＬＤＬコレステロール",
+    "γ－ＧＴ（γ－ＧＴＰ）", "ＧＯＴ（ＡＳＴ）", "ＧＰＴ（ＡＬＴ）"
+]
 habitLabels = ["３０分以上の運動習慣", "歩行又は身体活動", "歩行速度",
                "食べ方２（就寝前）", "食べ方３（夜食／間食）", "食習慣", "食べ方１（早食い等）",
                "飲酒", "飲酒量",
@@ -20,6 +25,11 @@ habitLevels = [["いいえ", "はい"], ["いいえ", "はい"], ["いいえ", "
                ["いいえ", "はい"], ["いいえ", "はい"], ["いいえ", "はい"], ["遅い", "ふつう", "速い"],
                ["ほとんど飲まない", "時々", "毎日"], ["", "１合未満", "１～２合未満", "２～３合未満", "３合以上"],
                ["いいえ", "はい"], ["いいえ", "はい"]]
+habitLevels2 = [["", "いいえ", "はい"], ["", "いいえ", "はい"], ["", "いいえ", "はい"],
+                ["", "いいえ", "はい"], ["", "いいえ", "はい"], ["", "いいえ", "はい"],
+                ["", "遅い", "ふつう", "速い"], ["", "ほとんど飲まない", "時々", "毎日"],
+                ["", "１合未満", "１～２合未満", "２～３合未満", "３合以上"],
+                ["", "いいえ", "はい"], ["", "いいえ", "はい"]]
 # habitLabels = ["３０分以上の運動習慣", "食べ方３（夜食／間食）", "飲酒", "喫煙"]
 # habitLevels = [["いいえ", "はい"], ["いいえ", "はい"], ["ほとんど飲まない", "時々", "毎日"], ["いいえ", "はい"]]
 medicineLabels = ["服薬１（血圧）", "服薬２（血糖）", "服薬３（脂質）"]
@@ -29,6 +39,55 @@ medicineLevels = [["いいえ", "2.0"], ["いいえ", "2.0"], ["いいえ", "2.0
 habitLabels_jp_replaced = [f"h{i}" for i in range(len(habitLabels))]
 dataLabels_jp_replaced = [f"d{i}" for i in range(len(dataLabels))]
 medicineLabels_jp_replaced = [f"m{i}" for i in range(len(medicineLabels))]
+
+
+def refineData(pathHealthCheck, pathResultPandas):
+    df = pd.read_csv(pathHealthCheck)
+    num0 = len(df)
+
+    df = df[otherLabels + dataLabels + habitLabels + medicineLabels]
+    df[habitLabels] = df[habitLabels].fillna("")
+    df = df.dropna()
+    print(f"Dropped nan: {num0} -> {len(df)}")
+    num0 = len(df)
+
+    # check measured data valid
+    df["健診受診日"] = pd.to_datetime(df["健診受診日"].astype(str), format='4%y%m%d.0')
+    df["健診受診日"] = df["健診受診日"] - pd.tseries.offsets.DateOffset(years=12)  # 和暦から西暦に
+    for label in dataLabels:
+        df[label] = pd.to_numeric(df[label], errors='coerce')
+    df = df.dropna()
+    print(f"checked data: {num0} -> {len(df)}")
+    num0 = len(df)
+
+    # chech habit valid
+    habit_valid = np.full(len(df), True)
+    for n, label in enumerate(habitLabels):
+        v = np.full(len(df), False)
+        df[label + "_level"] = -1
+        for m, level in enumerate(habitLevels2[n]):
+            v = v | (df[label] == level)
+            df[label + "_level"][df[label] == level] = m
+        habit_valid = habit_valid & v
+    df = df[habit_valid]
+    print(f"Checked habit: {num0} -> {len(df)}")
+    num0 = len(df)
+
+    # check medicine valid
+    medicine_valid = np.full(len(df), True)
+    for n, label in enumerate(medicineLabels):
+        v = np.full(len(df), False)
+        df[label + "_level"] = -1
+        for m, level in enumerate(medicineLevels[n]):
+            v = v | (df[label] == level)
+            df[label + "_level"][df[label] == level] = m
+        medicine_valid = medicine_valid & v
+    df = df[medicine_valid]
+    print(f"Checked medinece: {num0} -> {len(df)}")
+    nMID = len(pd.unique(df['m_id']))
+    print(f"{nMID} unique members")
+
+    pd.to_pickle(df, pathResultPandas)
 
 
 def analyze(pathHealthCheck, pathAnalysisHealthCheck):
@@ -78,7 +137,7 @@ def analyze(pathHealthCheck, pathAnalysisHealthCheck):
 
     anovaAll(df_jp_replaced, wb, pathAnalysisHealthCheck.joinpath("anova_p.csv"), medi_check=False)
 
-    wb.save(str(pathAnalysisHealthCheck.joinpath("hc_analysi.xlsx")))
+    wb.save(str(pathAnalysisHealthCheck.joinpath("hc_analysis.xlsx")))
 
 
 def histHabit(df, wb):

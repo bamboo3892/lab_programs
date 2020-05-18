@@ -13,105 +13,169 @@ from pyro import distributions as dist
 def model(data, args):
     """
     data:
-        [tensor[D, V1], tensor[D, V2], ...]
+        [[tensor[D, V_1], tensor[D, V_2], ... , tensor[D, V_Rt]],  # bow tensors
+         tensor[Rm, D],  # measurements(continueous value)
+         tensor[Rh, D]]  # habits(categorical value)
     args:
         K,
+        n_h,  # number of categories for record "rh"
         eps,
         auto_beta, auto_alpha,
         coef_beta, coef_alpha,
         device
     """
-    R = len(data)
-    D = data[0].shape[0]
-    V = [data[r].shape[1] for r in range(R)]
+    bows = data[0]
+    measurements = data[1]
+    habits = data[2]
+    Rt = len(bows)
+    Rm = len(measurements)
+    Rh = len(habits)
+    D = measurements[0].shape[0]
+    V = [bows[r].shape[1] for r in range(Rt)]  # list[Rt]
     K = args.K
+    n_h = args.n_h
 
-    # hyper params
     if(args.auto_alpha):
         alpha_hyper = pyro.param("alpha_hyper", torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha, constraint=constraints.positive)
     else:
         alpha_hyper = torch.ones([K], device=args.device, dtype=torch.float64) * args.coef_alpha
 
-    beta_hyper = [0] * R
-    for r in pyro.plate("records1", R):
+    beta_hyper = [0] * Rt
+    for r in pyro.plate("records_rt1", Rt):
         if(args.auto_beta):
             beta_hyper[r] = pyro.param(f"beta_hyper_r{r}", torch.ones([V[r]], device=args.device, dtype=torch.float64) * args.coef_beta, constraint=constraints.positive)
         else:
             beta_hyper[r] = torch.ones([V[r]], device=args.device, dtype=torch.float64) * args.coef_beta
 
-    # theta
-    with pyro.plate("documents1", D) as d:
+    with pyro.plate("documents", D) as d:
         theta = pyro.sample("theta", dist.Dirichlet(alpha_hyper))
 
-    for r in pyro.plate("records2", R):
-        with pyro.plate(f"topics_r{r}", K):
-            phi = pyro.sample(f"phi_r{r}", dist.Dirichlet(beta_hyper[r]))
-        with pyro.plate(f"documents2_r{r}", D) as d:
-            w_d = data[r][d] + args.eps
+    # words
+    for r in pyro.plate("records_rt2", Rt):
+        with pyro.plate(f"topics_rt{r}", K):
+            phi = pyro.sample(f"phi_rt{r}", dist.Dirichlet(beta_hyper[r]))  # [K, V]
+
+        with pyro.plate(f"documents_rt{r}", D) as d:
+            w_d = bows[r][d] + args.eps
             w_d = w_d / torch.sum(w_d, dim=1, keepdim=True)
 
             p = torch.mm(theta, phi)  # [D, V]
-            N = torch.sum(data[r][d], dim=1)  # [D]
+            N = torch.sum(bows[r][d], dim=1)  # [D]
             p = p * N[:, None] + 1  # Dirichlet(p)は最頻値(極大値)がp(w)になる分布
-            w = pyro.sample(f"w_r{r}", dist.Dirichlet(p), obs=w_d)
+            pyro.sample(f"w_rt{r}", dist.Dirichlet(p), obs=w_d)  # [D, V]
 
-    return phi, theta, w
+    # measurements
+    mu = pyro.param("mu", torch.ones([Rm, K], device=args.device, dtype=torch.float64) * torch.mean(measurements, 1)[:, None])  # [Rm, K]
+    sigma = pyro.param("sigma", torch.ones([Rm, K], device=args.device, dtype=torch.float64), constraint=constraints.positive)  # [Rm, K]
+    for r in pyro.plate("records_rm", Rm):
+        with pyro.plate(f"documents_rm{r}", D) as d:
+            z = pyro.sample(f"z_rm{r}", dist.Categorical(theta[d]))  # [D]
+            x = pyro.sample(f"x_rm{r}", dist.Normal(mu[r][z], sigma[r][z]), obs=measurements[r])  # [D]
+
+    # habits
+    for r in pyro.plate("records_rh", Rh):
+        rho = pyro.param(f"rho_rh{r}", torch.ones([K, n_h[r]], device=args.device, dtype=torch.float64) / n_h[r], constraint=constraints.simplex)  # [K, n_h[r]]
+        with pyro.plate(f"documents_rh{r}", D) as d:
+            z = pyro.sample(f"z_rh{r}", dist.Categorical(theta[d]))  # [D]
+            x = pyro.sample(f"x_rh{r}", dist.Categorical(rho[z]), obs=habits[r])  # [D]
+
+    return phi, theta
 
 
 def guide(data, args):
-    R = len(data)
-    D = data[0].shape[0]
-    V = [data[r].shape[1] for r in range(R)]
+    bows = data[0]
+    measurements = data[1]
+    habits = data[2]
+    Rt = len(bows)
+    Rm = len(measurements)
+    Rh = len(habits)
+    D = measurements[0].shape[0]
+    V = [bows[r].shape[1] for r in range(Rt)]  # list[Rt]
     K = args.K
+    n_h = args.n_h
 
     theta_guide = pyro.param("theta_guide", torch.ones([D, K], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-    phi_guide = [0] * R
-    for r in pyro.plate("records1", R):
-        phi_guide[r] = pyro.param(f"phi_guide_r{r}", torch.ones([K, V[r]], device=args.device, dtype=torch.float64), constraint=constraints.positive)
-
-    with pyro.plate("documents1", D) as d:
+    with pyro.plate("documents", D) as d:
         theta = pyro.sample("theta", dist.Dirichlet(theta_guide[d]))
 
-    for r in pyro.plate("records2", R):
-        with pyro.plate(f"topics_r{r}", K) as k:
-            phi = pyro.sample(f"phi_r{r}", dist.Dirichlet(phi_guide[r][k]))
+    phi_guide = [0] * Rt
+    for r in pyro.plate("records_rt1", Rt):
+        phi_guide[r] = pyro.param(f"phi_guide_r{r}", torch.ones([K, V[r]], device=args.device, dtype=torch.float64), constraint=constraints.positive)
+
+    # words
+    for r in pyro.plate("records_rt2", Rt):
+        with pyro.plate(f"topics_rt{r}", K) as k:
+            phi = pyro.sample(f"phi_rt{r}", dist.Dirichlet(phi_guide[r][k]))  # [K, V]
+
+    # measurements
+    for r in pyro.plate("records_rm", Rm):
+        with pyro.plate(f"documents_rm{r}", D) as d:
+            z = pyro.sample(f"z_rm{r}", dist.Categorical(theta[d]))  # [D]
+
+    # habits
+    for r in pyro.plate("records_rh", Rh):
+        with pyro.plate(f"documents_rh{r}", D) as d:
+            z = pyro.sample(f"z_rh{r}", dist.Categorical(theta[d]))  # [D]
 
 
 def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
-    R = len(data)
-    D = data[0].shape[0]
-    V = [data[r].shape[1] for r in range(R)]
+    bows = data[0]
+    measurements = data[1]
+    habits = data[2]
+    Rt = len(bows)
+    Rm = len(measurements)
+    Rh = len(habits)
+    D = bows[0].shape[0]
+    V = [bows[r].shape[1] for r in range(Rt)]  # list[Rt]
     K = args.K
+    n_h = args.n_h
 
+    # theta
     theta_guide = pyro.param("theta_guide")
     theta_guide_ = theta_guide.cpu().detach().numpy()
     theta = dist.Dirichlet(theta_guide).independent(1).mean
     theta_ = theta.cpu().detach().numpy()
 
-    phi_guide = [0] * R
-    phi_guide_ = [0] * R
-    phi = [0] * R
-    phi_ = [0] * R
-    for r in range(R):
+    # phi
+    phi_guide = [0] * Rt
+    phi_guide_ = [0] * Rt
+    phi = [0] * Rt
+    phi_ = [0] * Rt
+    for r in range(Rt):
         phi_guide[r] = pyro.param(f"phi_guide_r{r}")
         phi_guide_[r] = phi_guide[r].cpu().detach().numpy()
         phi[r] = dist.Dirichlet(phi_guide[r]).independent(1).mean
         phi_[r] = phi[r].cpu().detach().numpy()
 
+    # alpha
     if(args.auto_alpha):
         alpha_hyper = pyro.param("alpha_hyper")
     else:
         alpha_hyper = torch.ones([K]) * args.coef_alpha
     alpha_hyper_ = alpha_hyper.cpu().detach().numpy()
 
-    beta_hyper = [0] * R
-    beta_hyper_ = [0] * R
-    for r in pyro.plate("records1", R):
+    # beta
+    beta_hyper = [0] * Rt
+    beta_hyper_ = [0] * Rt
+    for r in range(Rt):
         if(args.auto_beta):
             beta_hyper[r] = pyro.param(f"beta_hyper_r{r}")
         else:
             beta_hyper[r] = torch.ones([V[r]]) * args.coef_beta
         beta_hyper_[r] = beta_hyper[r].cpu().detach().numpy()
+
+    # mu, sigma
+    mu = pyro.param("mu")
+    mu_ = mu.cpu().detach().numpy()
+    sigma = pyro.param("sigma")
+    sigma_ = sigma.cpu().detach().numpy()
+
+    # rho
+    rho = [0] * Rh
+    rho_ = [0] * Rh
+    for r in range(Rh):
+        rho[r] = pyro.param(f"rho_rh{r}")
+        rho_[r] = rho[r].cpu().detach().numpy()
 
     if(pathResultFolder is not None):
         print("saving models")
@@ -143,12 +207,31 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         ws = wb.create_sheet("args")
         writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
 
+        ws = wb.create_sheet("mu_sigma")
+        writeMatrix(ws, mu_, 1, 1,
+                    row_names=[f"record_m{r+1}" for r in range(Rm)],
+                    column_names=[f"topic{k+1}" for k in range(K)],
+                    addDataBar=True)
+        writeMatrix(ws, sigma_, 1, K + 3,
+                    row_names=[f"record_m{r+1}" for r in range(Rm)],
+                    column_names=[f"topic{k+1}" for k in range(K)],
+                    addDataBar=True)
+
+        ws = wb.create_sheet("rho")
+        row = 1
+        for r in range(Rh):
+            writeMatrix(ws, rho_[r].T, row, 1,
+                        row_names=[f"category{c+1}" for c in range(n_h[r])],
+                        column_names=[f"topic{k+1}" for k in range(K)],
+                        addDataBar=True)
+            row += n_h[r] + 2
+
         ws = wb.create_sheet("alpha_hyper")
         writeVector(ws, alpha_hyper_, axis="row", names=[f"topic{d+1}" for d in range(K)],
                     addDataBar=True)
 
         ws = wb.create_sheet("beta_hyper")
-        for r in range(R):
+        for r in range(Rt):
             writeVector(ws, beta_hyper_[r], column=r * 3 + 1,
                         axis="row", names=words[r],
                         addDataBar=True)
@@ -159,7 +242,7 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
                     column_names=[f"topic{k+1}" for k in range(K)],
                     addDataBar=True)
 
-        for r in range(R):
+        for r in range(Rt):
             ws = wb.create_sheet(f"phi_r{r}")
             writeMatrix(ws, phi_[r].T, 1, 1,
                         row_names=words[r],
@@ -178,13 +261,13 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         wb.remove_sheet(tmp_ws)
         wb.save(pathResultFolder.joinpath("result.xlsx"))
 
-
+        # topics file
         wb = openpyxl.Workbook()
         tmp_ws = wb[wb.get_sheet_names()[0]]
 
         for k in range(K):
             ws = wb.create_sheet(f"topic_{k}")
-            for r in range(R):
+            for r in range(Rt):
                 ws.cell(1, r + 1, f"r{r}")
                 idx = np.argsort(phi_[r][k])[::-1]
                 dat = np.array(words[r])[idx].tolist()

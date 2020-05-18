@@ -20,6 +20,8 @@ import LDA_pyro.sNTD as sNTD
 import LDA_pyro.sNTD_update_model as sNTD2
 import LDA_pyro.eLLDA as eLLDA
 import LDA_pyro.MCLDA as MCLDA
+import LDA_pyro.MCLDAnum2 as MCLDAnum
+import LDA_pyro.MCLDAnum_only2 as MCLDAnum_only
 
 
 seed = 1
@@ -28,8 +30,10 @@ np.random.seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
+def excuteFromData(modelType, pData, words, docs, pathResult, counts=None, *,
                    args=type("args", (object,), {})):
+
+    print(f"Model: {modelType}  (to {pathResult})")
 
     pathResult.mkdir(exist_ok=True, parents=True)
     inference = "svi"
@@ -46,7 +50,7 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
         args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ?
         args.eps = 0.00001
 
-        data = bow
+        data = pData
         model = LDA.model
         guide = LDA.guide
         summary = LDA.summary
@@ -91,9 +95,9 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
 
         args.num_steps = 1
         args.learning_rate = 0.2
-        args.D = bow.shape[0]
+        args.D = pData.shape[0]
         args.K = 7
-        args.V = bow.shape[1]
+        args.V = pData.shape[1]
         args.S = 4
         args.coef_phi = 1
         args.coef_sigma = 1
@@ -103,7 +107,7 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
         print(f"coef_sigma: {args.coef_sigma}")
         print(f"coef_theta: {args.coef_theta}")
 
-        data = [bow, seasons]
+        data = [pData, seasons]
         model = sepSW.model
         guide = sepSW.guide
         summary = sepSW.summary
@@ -116,10 +120,10 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
 
         args.num_steps = 200
         args.learning_rate = 0.2
-        args.D = bow.shape[0]
+        args.D = pData.shape[0]
         args.K1 = 10
         args.K2 = 4
-        args.V = bow.shape[1]
+        args.V = pData.shape[1]
         args.S = 4
         args.coef_phi = 0.01
         args.coef_sigma = 1
@@ -129,7 +133,7 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
         print(f"coef_sigma: {args.coef_sigma}")
         print(f"coef_theta: {args.coef_theta}")
 
-        data = [bow, seasons]
+        data = [pData, seasons]
         model = sNTD.model
         guide = sNTD.guide
         summary = sNTD.summary
@@ -142,9 +146,9 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
 
         args.num_steps = 1
         args.learning_rate = 0.2
-        args.D = bow.shape[0]
+        args.D = pData.shape[0]
         args.K = 15
-        args.V = bow.shape[1]
+        args.V = pData.shape[1]
         args.coef_phi = 1
         args.coef_theta1 = 10  # その文書がそのラベル思っていない時
         args.coef_theta2 = 100  # その文書がそのラベル思っている時
@@ -157,7 +161,7 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
             theta_prior[d, labels[d]] = args.coef_theta2
         theta_prior = torch.tensor(theta_prior)
 
-        data = [bow, theta_prior]
+        data = [pData, theta_prior]
         model = eLLDA.model
         guide = eLLDA.guide
         summary = eLLDA.summary
@@ -166,20 +170,54 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
         args.num_steps = 200
         args.learning_rate = 0.2
         args.K = 5
-        args.autoHyperParam = True
+        args.auto_beta = True
+        args.auto_alpha = True
         args.coef_beta = 1
         args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
-        args.eps = 0.01
+        args.eps = 0.0001
 
-        data = bow
+        data = pData
         model = MCLDA.model
         guide = MCLDA.guide
         summary = MCLDA.summary
-        if(not args.autoHyperParam):
-            print(f"coef_beta:   {args.coef_beta}")
-            print(f"coef_alpha: {args.coef_alpha}")
-        else:
-            print("Hyper parameter auto adapted")
+        print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
+        print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
+
+    elif(modelType == "MCLDAnum"):
+        args.num_steps = 1000
+        args.learning_rate = 0.2
+        args.K = 5
+        args.n_h = [len(torch.unique(pData[2][r])) for r in range(len(pData[2]))]
+        args.auto_beta = True
+        args.auto_alpha = True
+        args.coef_beta = 1
+        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
+        args.eps = 0.0001
+
+        data = pData
+        model = MCLDAnum.model
+        guide = MCLDAnum.guide
+        summary = MCLDAnum.summary
+        print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
+        print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
+
+    elif(modelType == "MCLDAnum_only"):
+        args.num_steps = 1000
+        args.learning_rate = 0.2
+        args.K = 5
+        args.n_h = [len(torch.unique(pData[1][r])) for r in range(len(pData[1]))]
+        args.auto_beta = False
+        args.auto_alpha = False
+        args.coef_beta = 1
+        args.coef_alpha = 0.1  # 大きいほうが同じようなトピックが形成される感じ
+        args.eps = 0.0001
+
+        data = pData
+        model = MCLDAnum_only.model
+        guide = MCLDAnum_only.guide
+        summary = MCLDAnum_only.summary
+        print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
+        print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     if(inference == "svi"):
         # SVI
@@ -194,9 +232,9 @@ def excuteFromData(modelType, bow, words, docs, pathResult, counts=None, *,
         losses = []
         while(True):
             loss = svi.step(data, args=args)
-            losses.append(loss)
-            # if((i + 1) % 10 == 0):
-            #     print("i:{:<5d} loss:{:<f}".format(i + 1, loss))
+            if((i + 1) % 100 == 0):
+                losses.append(loss)
+                print("i:{:<5d} loss:{:<f}".format(i + 1, loss))
             # p = pathResult.joinpath(f"{i+1}")
             # p.mkdir(exist_ok=True, parents=True)
             # summary(data, args, words, docs, p, counts=counts)
@@ -257,26 +295,75 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         docs = json.load(f)
 
-    keys = tensors["tensor_keys"]
+    tensor_keys = tensors["tensor_keys"]
+    measurement_keys = tensors["measurement_keys"]
+    habit_keys = tensors["habit_keys"]
+    medicine_keys = tensors["medicine_keys"]
+
+    # for memory issue
+    # tensor_keys.remove("p_r_snack_text")
+    # tensor_keys.remove("p_r_sake_text")
+    # tensor_keys.remove("p_r_sleep_text")
+    # tensor_keys.remove("p_r_other")
+    # measurement_keys.remove("ＧＯＴ（ＡＳＴ）")
+    # measurement_keys.remove("ＧＰＴ（ＡＬＴ）")
 
     if(modelType == "LDA"):
-        for key in keys:
+        for key in tensor_keys:
             print(f"key: {key}")
             bow = torch.tensor(tensors[key], device=DEVICE)
             words = tensors[key + "_words"]
             counts = tensors[key + "_counts"]
             excuteFromData(modelType, bow, words, docs, pathResult.joinpath(key), counts=counts)
-            return
 
     elif(modelType == "MCLDA"):
         bows = []
         words = []
         counts = []
-        for key in keys:
-            bows.append(torch.tensor(tensors[key], device=DEVICE))
+        for key in tensor_keys:
+            bows.append(torch.tensor(tensors[key], device=DEVICE, dtype=torch.int16))
             words.append(tensors[key + "_words"])
             counts.append(tensors[key + "_counts"])
         excuteFromData(modelType, bows, words, docs, pathResult, counts=counts)
+
+    elif(modelType == "MCLDAnum"):
+        bows = []
+        words = []
+        counts = []
+        for key in tensor_keys:
+            bows.append(torch.tensor(tensors[key], device=DEVICE, dtype=torch.int8))
+            words.append(tensors[key + "_words"])
+            counts.append(tensors[key + "_counts"])
+
+        measurements = []
+        habits = []
+        for key in measurement_keys:
+            measurements.append(tensors[key])
+        for key in habit_keys:
+            habits.append(tensors[key])
+        measurements = torch.tensor(measurements, device=DEVICE, dtype=torch.float16)
+        habits = torch.tensor(habits, device=DEVICE, dtype=torch.int8)
+
+        data = []
+        data.append(bows)
+        data.append(measurements)
+        data.append(habits)
+
+        excuteFromData(modelType, data, words, docs, pathResult, counts=counts)
+
+    elif(modelType == "MCLDAnum_only"):
+
+        measurements = []
+        habits = []
+        for key in measurement_keys:
+            measurements.append(tensors[key])
+        for key in habit_keys:
+            habits.append(tensors[key])
+        measurements = torch.tensor(measurements, device=DEVICE, dtype=torch.float64)
+        habits = torch.tensor(habits, device=DEVICE, dtype=torch.int64)
+
+        data = [measurements, habits]
+        excuteFromData(modelType, data, [], docs, pathResult)
 
 
 def _func0(docs, morphomes_key, device):

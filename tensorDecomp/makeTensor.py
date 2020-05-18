@@ -145,24 +145,41 @@ def makeTensor3_golf(pathMorphomes, pathTensor, *, morphomesKey="morphomes"):
         output.write(text)
 
 
-def makeTensorForMultiChannel(pathMorphomes, pathTensorPickle, morphomesKeys,
-                              *,
-                              midKey="m_id"):
+def makeTensorForMultiChannel(pathMorphomes, pathHealthCheckRefined, pathTensorPickle,
+                              morphomesKeys,
+                              measurementKeysHC, habitKeysHC, medicineKeysHC):
 
     print("Start making tensors for multi channel")
-    print('("{}  to  {}")'.format(str(pathMorphomes), str(pathTensorPickle)))
+    print('("{}"  to  "{}")'.format(str(pathMorphomes), str(pathTensorPickle)))
     with open(str(pathMorphomes), "r", encoding="utf_8_sig") as f:
         reviews = json.load(f)
+    df = pd.read_pickle(pathHealthCheckRefined)
 
     tensors = {}
     tensors["tensor_keys"] = morphomesKeys
+    tensors["measurement_keys"] = measurementKeysHC
+    tensors["habit_keys"] = habitKeysHC
+    tensors["medicine_keys"] = medicineKeysHC
 
-    ids = []
+    pids = []
+    pidToHC = []
+    year1 = datetime.timedelta(days=365)
     for review in reviews:
-        if(review[midKey] not in ids):
-            ids.append(review[midKey])
-    tensors["ids"] = ids
-    print("{} docs, {} ids".format(len(reviews), len(ids)))
+        pid = int(review["p_seq"])
+        mid = int(review["m_id"])
+
+        # この対象者の保健指導から一年以内の検診データがあるかどうか
+        df1 = df[df["m_id"] == mid]
+        if(len(df1) > 0):
+            p_date = datetime.datetime.strptime(review["p_s_date"], "%Y-%m-%d")
+            df2 = df1[df1["健診受診日"] < p_date]  # 保健指導日より前
+            df2 = df2[df2["健診受診日"] > p_date - year1]  # 保健指導日から1年以内
+            if(len(df2) > 0):
+                pids.append(pid)
+                pidToHC.append(df2.sort_values("健診受診日", ascending=False).iloc[0])
+    tensors["ids"] = pids
+    pidToHC = pd.DataFrame(pidToHC)
+    print("{} -> {} docs".format(len(reviews), len(pids)))
 
     for morphomesKey in morphomesKeys:
         words = []
@@ -178,18 +195,26 @@ def makeTensorForMultiChannel(pathMorphomes, pathTensorPickle, morphomesKeys,
         words = np.array(words)[idx].tolist()
         count = np.array(count)[idx]
 
-        t = np.zeros((len(reviews), len(words)), dtype="int8")
+        t = np.zeros((len(pids), len(words)), dtype="int8")
         for review in reviews:
-            n = ids.index(review[midKey])
-            for l in review[morphomesKey + "_morphomes"]:
-                for w in l:
-                    t[n, words.index(w)] += 1
+            if(int(review["p_seq"]) in pids):
+                n = pids.index(int(review["p_seq"]))
+                for l in review[morphomesKey + "_morphomes"]:
+                    for w in l:
+                        t[n, words.index(w)] += 1
 
         tensors[morphomesKey] = t
         tensors[morphomesKey + "_words"] = words
         tensors[morphomesKey + "_counts"] = count
 
         print('\rKey "{}" finished'.format(morphomesKey))
+
+    for key in measurementKeysHC:
+        tensors[key] = pidToHC[key].values
+    for key in habitKeysHC:
+        tensors[key] = pidToHC[key + "_level"].values
+    for key in medicineKeysHC:
+        tensors[key] = pidToHC[key + "_level"].values
 
     print("Saving documents")
     with open(str(pathTensorPickle), 'wb') as f:

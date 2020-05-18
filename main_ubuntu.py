@@ -30,6 +30,7 @@ import analysis.analyzeHealthCheck
 DATA_FOLDER = Path("/mnt/nas/prj_qol/福間研共同研究/特定保健指導/data")
 ORIGINAL = DATA_FOLDER.joinpath("original")
 HEALTH_CHECK = ORIGINAL.joinpath("Health_check_up_2329.csv")
+HEALTH_CHECK_REFINED = DATA_FOLDER.joinpath("analysis_healthcheck", "hc_refined.pickle")
 FORMED = DATA_FOLDER.joinpath("formed")
 MORPHOMES = DATA_FOLDER.joinpath("morphomes")
 TENSOR = DATA_FOLDER.joinpath("tensor")
@@ -40,13 +41,18 @@ DICTIONARY = Path(__file__).absolute().parent.parent.joinpath("data").joinpath("
 
 MULTI_CHANNEL_KEYS = ["p_r_explan_iyoku", "p_r_exer", "p_r_other_text",
                       "p_r_drink_text", "p_r_snack_text", "p_r_sake_text", "p_r_sleep_text", "p_r_other"]
+HC_MEASUREMENT_KEYS = analysis.analyzeHealthCheck.dataLabels
+HC_HABIT_KEYS = analysis.analyzeHealthCheck.habitLabels
+HC_MEDICINE_KEYS = analysis.analyzeHealthCheck.medicineLabels
 
 if __name__ == '__main__':
+
+    b21 = False  # save health check file as pandas
 
     b0 = False  # execute formReviewToJson?
     b1 = False  # execute sepReviewsToMorphomes?
     b2 = False  # excute LDA(gibbs)?
-    b20 = True  # excute LDA_pyro?
+    b20 = False  # excute LDA_pyro?
     b3 = False  # excute sLDA?
     b4 = False  # excute LLDA
     b5 = False  # excute analyze
@@ -65,8 +71,16 @@ if __name__ == '__main__':
     b17 = False  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
+    b22 = True  # excute MCLDAnum
+    b23 = False  # excute MCLDAnum_only
 
     b11 = False  # HC statistics
+
+
+    if(b21):
+        f0 = time.time()
+        analysis.analyzeHealthCheck.refineData(HEALTH_CHECK, HEALTH_CHECK_REFINED)
+        print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b0):
         f0 = time.time()
@@ -280,7 +294,7 @@ if __name__ == '__main__':
     morphomes = [forder.joinpath("multi_full003.json"), forder.joinpath("multi_full005.json"),
                  forder.joinpath("multi1_10000.json"), forder.joinpath("multi2_10000.json"),
                  forder.joinpath("multi1_30000.json"), forder.joinpath("multi2_30000.json")]
-    tensors = [TENSOR.joinpath("multi_channel", a.name) for a in morphomes]
+    tensors = [TENSOR.joinpath("multi_channel", a.stem + ".pickle") for a in morphomes]
     # input_ = [MORPHOMES.joinpath("sompo1_10000.json")]
     # output = [forder.joinpath("multi1_10000.json")]
 
@@ -303,9 +317,9 @@ if __name__ == '__main__':
     if(b17):
         f0 = time.time()
         for n in range(len(morphomes)):
-            tensorDecomp.makeTensor.makeTensorForMultiChannel(morphomes[n],
-                                                              tensors[n],
-                                                              ["p_r_tgtset_explan"] + MULTI_CHANNEL_KEYS)
+            tensorDecomp.makeTensor.makeTensorForMultiChannel(morphomes[n], HEALTH_CHECK_REFINED, tensors[n],
+                                                              MULTI_CHANNEL_KEYS,
+                                                              HC_MEASUREMENT_KEYS, HC_HABIT_KEYS, HC_MEDICINE_KEYS)
             print("")
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
@@ -319,6 +333,18 @@ if __name__ == '__main__':
         f0 = time.time()
         LDA_pyro.excute.excuteLDAForMultiChannel("MCLDA", tensors[2], morphomes[2],
                                                  RESULT.joinpath("multi_channel", "MCLDA", "tmp"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b22):
+        f0 = time.time()
+        LDA_pyro.excute.excuteLDAForMultiChannel("MCLDAnum", tensors[2], morphomes[2],
+                                                 RESULT.joinpath("multi_channel", "MCLDAnum", "tmp"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b23):
+        f0 = time.time()
+        LDA_pyro.excute.excuteLDAForMultiChannel("MCLDAnum_only", tensors[2], morphomes[2],
+                                                 RESULT.joinpath("multi_channel", "MCLDAnum_only", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 
