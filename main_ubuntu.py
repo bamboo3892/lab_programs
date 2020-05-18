@@ -44,6 +44,8 @@ MULTI_CHANNEL_KEYS = ["p_r_explan_iyoku", "p_r_exer", "p_r_other_text",
 HC_MEASUREMENT_KEYS = analysis.analyzeHealthCheck.dataLabels
 HC_HABIT_KEYS = analysis.analyzeHealthCheck.habitLabels
 HC_MEDICINE_KEYS = analysis.analyzeHealthCheck.medicineLabels
+HC_HABIT_LEVELS = analysis.analyzeHealthCheck.habitLevels2
+HC_MEDICINE_LEVELS = analysis.analyzeHealthCheck.medicineLevels
 
 if __name__ == '__main__':
 
@@ -338,7 +340,8 @@ if __name__ == '__main__':
     if(b22):
         f0 = time.time()
         LDA_pyro.excute.excuteLDAForMultiChannel("MCLDAnum", tensors[2], morphomes[2],
-                                                 RESULT.joinpath("multi_channel", "MCLDAnum", "tmp"))
+                                                 RESULT.joinpath("multi_channel", "MCLDAnum", "tmp"),
+                                                 habit_levels=HC_HABIT_LEVELS, medicine_levels=HC_MEDICINE_LEVELS)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b23):

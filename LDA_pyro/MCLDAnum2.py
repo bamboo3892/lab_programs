@@ -135,7 +135,7 @@ def guide(data, args):
             rho = pyro.sample(f"rho_rh{r}", dist.Dirichlet(rho_guide))  # [K, n_h[r]]
 
 
-def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
+def summary(data, args, words, reviews, pathResultFolder=None, summary_args=None):
     bows = data[0]
     measurements = data[1]
     habits = data[2]
@@ -234,25 +234,27 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu_, 1, 1,
-                    row_names=[f"record_m{r+1}" for r in range(Rm)],
+                    row_names=summary_args["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(K)],
                     addDataBar=True)
         writeMatrix(ws, sigma_, 1, K + 3,
-                    row_names=[f"record_m{r+1}" for r in range(Rm)],
+                    row_names=summary_args["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(K)],
                     addDataBar=True)
 
         ws = wb.create_sheet("rho")
         row = 1
         for r in range(Rh):
+            ws.cell(row, 1, summary_args["habit_keys"][r])
             writeMatrix(ws, rho_[r].T, row, 1,
-                        row_names=[f"category{c+1}" for c in range(n_h[r])],
+                        row_names=summary_args["habit_levels"][r],
                         column_names=[f"topic{k+1}" for k in range(K)],
-                        addDataBar=True)
+                        addDataBar=True, dataBarBoundary=[0., 1.])
             _, counts = torch.unique(habits[r], return_counts=True)
             counts = counts.cpu().detach().numpy()
             counts = counts / np.sum(counts)
-            writeMatrix(ws, counts[:, None], row, K + 3, column_names=["data distribution"], addDataBar=True)
+            writeMatrix(ws, counts[:, None], row, K + 3, column_names=["data distribution"],
+                        addDataBar=True, dataBarBoundary=[0., 1.])
             row += n_h[r] + 2
 
         ws = wb.create_sheet("alpha_hyper")
@@ -269,7 +271,7 @@ def summary(data, args, words, reviews, pathResultFolder=None, counts=None):
         writeMatrix(ws, theta_, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(D)],
                     column_names=[f"topic{k+1}" for k in range(K)],
-                    addDataBar=True)
+                    addDataBar=True, dataBarBoundary=[0., 1.])
 
         for r in range(Rt):
             ws = wb.create_sheet(f"phi_r{r}")

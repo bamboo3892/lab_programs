@@ -30,12 +30,11 @@ np.random.seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def excuteFromData(modelType, pData, words, docs, pathResult, counts=None, *,
+def excuteFromData(modelType, pData, words, docs, pathResult, summary_args=None, *,
                    args=type("args", (object,), {})):
 
     print(f"Model: {modelType}  (to {pathResult})")
 
-    pathResult.mkdir(exist_ok=True, parents=True)
     inference = "svi"
     args.modelType = modelType
     args.device = DEVICE
@@ -184,20 +183,21 @@ def excuteFromData(modelType, pData, words, docs, pathResult, counts=None, *,
         print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     elif(modelType == "MCLDAnum"):
-        args.num_steps = 1000
+        args.num_steps = 9000
         args.learning_rate = 0.2
         args.K = 5
         args.n_h = [len(torch.unique(pData[2][r])) for r in range(len(pData[2]))]
         args.auto_beta = True
-        args.auto_alpha = True
+        args.auto_alpha = False
         args.coef_beta = 1
-        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ
+        args.coef_alpha = 0.5  # 大きいほうが同じようなトピックが形成される感じ
         args.eps = 0.0001
 
         data = pData
         model = MCLDAnum.model
         guide = MCLDAnum.guide
         summary = MCLDAnum.summary
+        summary_args = summary_args
         print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
         print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
@@ -219,6 +219,7 @@ def excuteFromData(modelType, pData, words, docs, pathResult, counts=None, *,
         print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
         print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
+    pathResult.mkdir(exist_ok=True, parents=True)
     if(inference == "svi"):
         # SVI
         svi = SVI(model=model,
@@ -260,7 +261,7 @@ def excuteFromData(modelType, pData, words, docs, pathResult, counts=None, *,
                     )
         mcmc.run(data, args)
 
-    summary(data, args, words, docs, pathResult, counts=counts)
+    summary(data, args, words, docs, pathResult, summary_args=summary_args)
 
     print("")
 
@@ -288,7 +289,7 @@ def excuteLDAFromPath(modelType, pathTensor, pathWords, pathDocs, pathResult):
     #                        args=args)
 
 
-def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
+def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult, habit_levels=None, medicine_levels=None):
 
     with open(str(pathTensors), 'rb') as f:
         tensors = pickle.load(f)
@@ -314,7 +315,7 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
             bow = torch.tensor(tensors[key], device=DEVICE)
             words = tensors[key + "_words"]
             counts = tensors[key + "_counts"]
-            excuteFromData(modelType, bow, words, docs, pathResult.joinpath(key), counts=counts)
+            excuteFromData(modelType, bow, words, docs, pathResult.joinpath(key), summary_args=counts)
 
     elif(modelType == "MCLDA"):
         bows = []
@@ -324,7 +325,7 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
             bows.append(torch.tensor(tensors[key], device=DEVICE, dtype=torch.int16))
             words.append(tensors[key + "_words"])
             counts.append(tensors[key + "_counts"])
-        excuteFromData(modelType, bows, words, docs, pathResult, counts=counts)
+        excuteFromData(modelType, bows, words, docs, pathResult, summary_args=counts)
 
     elif(modelType == "MCLDAnum"):
         bows = []
@@ -349,7 +350,12 @@ def excuteLDAForMultiChannel(modelType, pathTensors, pathDocs, pathResult):
         data.append(measurements)
         data.append(habits)
 
-        excuteFromData(modelType, data, words, docs, pathResult, counts=counts)
+        summary_args = {}
+        summary_args["measurement_keys"] = measurement_keys
+        summary_args["habit_keys"] = habit_keys
+        summary_args["habit_levels"] = habit_levels
+
+        excuteFromData(modelType, data, words, docs, pathResult, summary_args=summary_args)
 
     elif(modelType == "MCLDAnum_only"):
 
