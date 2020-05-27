@@ -18,6 +18,7 @@ import LDA_GIBBS.example
 import sLDA_GIBBS.example
 import LLDA_GIBBS.example
 import LDA_pyro.excute
+import LDA_pytorch.excute
 import analysis.analyzeResult
 
 import tensorDecomp.makeTensor
@@ -55,6 +56,7 @@ if __name__ == '__main__':
     b1 = False  # execute sepReviewsToMorphomes?
     b2 = False  # excute LDA(gibbs)?
     b20 = False  # excute LDA_pyro?
+    b24 = True  # excute LDA_pytorch?
     b3 = False  # excute sLDA?
     b4 = False  # excute LLDA
     b5 = False  # excute analyze
@@ -73,7 +75,7 @@ if __name__ == '__main__':
     b17 = False  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
-    b22 = True  # excute MCLDAnum
+    b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
 
     b11 = False  # HC statistics
@@ -177,6 +179,13 @@ if __name__ == '__main__':
         #                                   TENSOR.joinpath("tensor2", "words.dat"),
         #                                   MORPHOMES.joinpath("sompo1_10000.json"),
         #                                   RESULT.joinpath("p_r_tgtset_explan", "pyro", "LDA_mcmc"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b24):
+        f0 = time.time()
+        LDA_pytorch.excute.excuteLDAFromPath("LDA",
+                                             MORPHOMES.joinpath("sompo1_30000.json"),
+                                             RESULT.joinpath("p_r_tgtset_explan", "pytorch", "LDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b3):
