@@ -1,6 +1,7 @@
 import pickle
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 
 import LDA_pytorch.LDA as LDA
@@ -40,13 +41,16 @@ def excuteFromData(modelType, docs,
     pathResult.mkdir(exist_ok=True, parents=True)
 
     model = model_class(args, data)
+    losses = []
     for n in range(args.num_steps):
-        model.step()
+        perplexity = model.step(100000)
+        losses.append(perplexity)
+        print("i:{:<5d} loss:{:<f}".format(n + 1, perplexity))
 
+    plt.plot(losses)
+    plt.savefig(pathResult.joinpath("perplexity.png"))
+    plt.clf()
     model.summary(summary_args)
-
-    print("")
-
 
 
 def excuteLDAFromPath(modelType, pathDocs, pathResult):
