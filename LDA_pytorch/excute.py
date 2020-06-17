@@ -12,7 +12,6 @@ np.random.seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-
 def excuteFromData(modelType, docs,
                    pathResult, *,
                    summary_args=type("args", (object,), {}), args=type("args", (object,), {})):
@@ -21,7 +20,7 @@ def excuteFromData(modelType, docs,
 
     args.modelType = modelType
     args.device = DEVICE
-    summary_args.path = pathResult
+    summary_args.summary_path = pathResult
 
     if(modelType == "LDA"):
         args.num_steps = 200
@@ -29,7 +28,7 @@ def excuteFromData(modelType, docs,
         args.auto_beta = False
         args.auto_alpha = False
         args.coef_beta = 1
-        args.coef_alpha = 1  # 大きいほうが同じようなトピックが形成される感じ?
+        args.coef_alpha = 1
 
         summary_args.morphome_key = "morphomes"
         data = [doc[summary_args.morphome_key] for doc in docs]
