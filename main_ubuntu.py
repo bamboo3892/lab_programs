@@ -56,7 +56,7 @@ if __name__ == '__main__':
     b1 = False  # execute sepReviewsToMorphomes?
     b2 = False  # excute LDA(gibbs)?
     b20 = False  # excute LDA_pyro?
-    b24 = True  # excute LDA_pytorch?
+    b24 = False  # excute LDA_pytorch?
     b3 = False  # excute sLDA?
     b4 = False  # excute LLDA
     b5 = False  # excute analyze
@@ -77,6 +77,7 @@ if __name__ == '__main__':
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
+    b25 = True  # excute MCLDA (torch)
 
     b11 = False  # HC statistics
 
@@ -183,9 +184,8 @@ if __name__ == '__main__':
 
     if(b24):
         f0 = time.time()
-        LDA_pytorch.excute.excuteLDAFromPath("LDA",
-                                             MORPHOMES.joinpath("sompo1_30000.json"),
-                                             RESULT.joinpath("p_r_tgtset_explan", "pytorch", "LDA", "tmp"))
+        LDA_pytorch.excute.excuteLDA(MORPHOMES.joinpath("sompo1_30000.json"),
+                                     RESULT.joinpath("p_r_tgtset_explan", "pytorch", "LDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b3):
@@ -357,6 +357,12 @@ if __name__ == '__main__':
         f0 = time.time()
         LDA_pyro.excute.excuteLDAForMultiChannel("MCLDAnum_only", tensors[2], morphomes[2],
                                                  RESULT.joinpath("multi_channel", "MCLDAnum_only", "tmp"))
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b25):
+        f0 = time.time()
+        LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 

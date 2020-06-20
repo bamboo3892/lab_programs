@@ -15,17 +15,21 @@ class LDA:
         """
         pytorchでgibbs sampling
 
-        data:
-            [doc[sentence[word, word, ...], ...], ...]
         args:
             K,
             auto_beta, auto_alpha,  # bool
             coef_beta, coef_alpha,  # float
             device
+        data:
+            [doc[sentence[word, word, ...], ...], ...]
         """
         super().__init__()
 
         # fields
+        self.args = args
+        self.data = data
+        self.device = args.device
+
         self.K = K = args.K
         self.D = D = len(data)
         self.V = 0
@@ -36,9 +40,6 @@ class LDA:
         self.docids = []  # [totalN]
         self.z = None  # [totalN]
 
-        self.args = args
-        self.data = data
-        self.device = args.device
         self.alpha = torch.full([K], args.coef_alpha, device=self.device, dtype=torch.float64)  # [K]
         self.beta = None  # [V]
 
