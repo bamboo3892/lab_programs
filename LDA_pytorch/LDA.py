@@ -5,11 +5,12 @@ import torch
 import pyro.distributions as dist
 import openpyxl
 
+from LDA_pytorch.ModelBase import MCMCModel
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
 
 
-class LDA:
+class LDA(MCMCModel):
 
     def __init__(self, args, data):
         """
@@ -79,59 +80,8 @@ class LDA:
         self._nd = torch.sum(self._tpd, 1)
 
 
-    def theta(self, to_cpu=True):
-        """
-        毎回計算するから何度も呼び出さないこと
-        """
-        theta = (self._tpd + self.alpha[None, :]) / (self._nd[:, None] + self.alpha.sum())  # [D, K]
-        if(to_cpu):
-            return theta.cpu().detach().numpy().copy()
-        else:
-            return theta
-
-
-    def phi(self, to_cpu=True):
-        """
-        毎回計算するから何度も呼び出さないこと
-        """
-        phi = (self._wpt + self.beta[None, :]) / (self._wt[:, None] + self.beta.sum())  # [K, V]
-        if(to_cpu):
-            return phi.cpu().detach().numpy().copy()
-        else:
-            return phi
-
-
-    def log_perplexity(self, testset=None):
-        if(testset is None):
-            phi = self.phi(to_cpu=False)
-            return phi[self.z, self.wordids].log().sum().item()
-        else:
-            # TODO
-            return None
-
-
-    def step(self, subsample_size, parameter_update=False):
-        """
-        subsample_sizeはgpuのコア数の整数倍が良さそう
-        1. update z, wpt, ...
-        2. update parameters if neseccary
-        """
-        rand_perm = torch.randperm(self.totalN, device=self.device)
-        for n in range(self.totalN // subsample_size + 1):
-            end = self.totalN if n == (self.totalN // subsample_size) else subsample_size * (n + 1)
-            idx = rand_perm[subsample_size * n: end]
-            self._sampling(idx)
-
-        if(parameter_update):
-            # TODO
-            pass
-
-        return self.log_perplexity()
-
-
     def _sampling(self, idx):
         """
-        idx: batch sample indexes
         1. sampleing z
         2. update wpt, tpd, wt
         """
@@ -183,6 +133,42 @@ class LDA:
         #            * (self._tpd[d, k] - a0 + self.alpha[k]) / (self._nd[d] + self.alpha.sum() - a0))
 
         return probs
+
+
+    def _update_parameters(self):
+        # TODO
+        pass
+
+
+    def theta(self, to_cpu=True):
+        """
+        毎回計算するから何度も呼び出さないこと
+        """
+        theta = (self._tpd + self.alpha[None, :]) / (self._nd[:, None] + self.alpha.sum())  # [D, K]
+        if(to_cpu):
+            return theta.cpu().detach().numpy().copy()
+        else:
+            return theta
+
+
+    def phi(self, to_cpu=True):
+        """
+        毎回計算するから何度も呼び出さないこと
+        """
+        phi = (self._wpt + self.beta[None, :]) / (self._wt[:, None] + self.beta.sum())  # [K, V]
+        if(to_cpu):
+            return phi.cpu().detach().numpy().copy()
+        else:
+            return phi
+
+
+    def log_perplexity(self, testset=None):
+        if(testset is None):
+            phi = self.phi(to_cpu=False)
+            return phi[self.z, self.wordids].log().sum().item()
+        else:
+            # TODO
+            return None
 
 
     def summary(self, summary_args):

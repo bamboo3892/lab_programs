@@ -5,11 +5,12 @@ import torch
 import pyro.distributions as dist
 import openpyxl
 
+from LDA_pytorch.ModelBase import MCMCModel
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
+from utils.wordcloud_util import create_wordcloud
 
 
-class MCLDA:
-
+class MCLDA(MCMCModel):
 
     def __init__(self, args, data):
         """
@@ -100,4 +101,19 @@ class MCLDA:
             self._wt_rt[rt] = torch.sum(self._wpt_rt[rt], 1)
         self._nd = torch.sum(self._tpd, 1)
 
+
+    def _sampling(self, idx):
+        pass
+
+
+    def _update_parameters(self):
+        # TODO
+        pass
+
+
+    def log_perplexity(self, testset=None):
+        return 0
+
+
+    def summary(self, summary_args):
         pass
