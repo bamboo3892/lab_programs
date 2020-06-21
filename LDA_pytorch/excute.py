@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
+from analysis.analyzeHealthCheck import habitLevels2
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
 
@@ -25,6 +26,7 @@ def excuteLDA(pathDocs, pathResult, *,
     model_class = LDA.LDA
     args.modelType = "LDA"
     args.num_steps = 200
+    args.step_subsample = 100000
     args.K = 7
     args.auto_beta = False
     args.auto_alpha = False
@@ -72,19 +74,24 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
             for rh, key in enumerate(habitKeysHC):
                 habits[rh].append(tensors[key][idx])
     data = [docs, np.array(measurements), np.array(habits)]
+    # data = [[], np.array(measurements), np.array([])]
+    # data = [[], np.array([]), np.array(habits)]
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 200
+    args.num_steps = 100
+    args.step_subsample = 10
     args.K = 3
-    args.n_rh = [len(np.unique(data[2][rh])) for rh in range(len(habitKeysHC))]
+    args.D = len(docs[0]) if len(docs) != 0 else (len(measurements[0]) if len(measurements) != 0 else (len(habits[0]) if len(habits) != 0 else 0))
+    args.n_rh = [len(habitLevels2[rh]) for rh in range(len(habitKeysHC))]
+    # args.n_rh = []
     args.auto_beta = False
     args.auto_alpha = False
     args.coef_beta = 1
     args.coef_alpha = 1
 
     summary_args.full_docs = docs
-    print(f"D: {len(data[0][0])}, K: {args.K}")
+    print(f"D: {args.D}, K: {args.K}")
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
@@ -103,9 +110,11 @@ def _excute(modelClass, args, data, pathResult, summary_args):
     model = modelClass(args, data)
     losses = []
     for n in range(args.num_steps):
-        perplexity = model.step(100000)
+        perplexity = model.step(args.step_subsample)
         losses.append(perplexity)
         print("i:{:<5d} loss:{:<f}".format(n + 1, perplexity))
+        if(n == 46):
+            pass
 
     plt.plot(losses)
     plt.savefig(pathResult.joinpath("perplexity.png"))

@@ -15,6 +15,11 @@ from utils.wordcloud_util import create_wordcloud
 # # b.index_add_(0, torch.tensor([0, 0], device=DEVICE), torch.tensor(1., device=DEVICE))
 # b.index_add_(0, torch.tensor([0, 0], device=DEVICE), torch.tensor([1., 1.], device=DEVICE))
 
-create_wordcloud(["apple", "banana", "orange"], "aaa.png")
+# create_wordcloud(["apple", "banana", "orange"], "aaa.png")
+
+m = torch.tensor([0, 0], dtype=torch.float64)
+s = torch.tensor([1, 1], dtype=torch.float64)
+x = torch.randn([5, 2])
+a = dist.Normal(m, s).log_prob(x).exp()
 
 print("aaaaaa")

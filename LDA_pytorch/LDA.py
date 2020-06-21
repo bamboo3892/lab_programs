@@ -5,12 +5,12 @@ import torch
 import pyro.distributions as dist
 import openpyxl
 
-from LDA_pytorch.ModelBase import MCMCModel
+from LDA_pytorch.ModelBase import LDABase
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
 
 
-class LDA(MCMCModel):
+class LDA(LDABase):
 
     def __init__(self, args, data):
         """
@@ -80,6 +80,25 @@ class LDA(MCMCModel):
         self._nd = torch.sum(self._tpd, 1)
 
 
+    def step(self, subsample_size, parameter_update=False):
+        """
+        subsample_sizeはgpuのコア数の整数倍が良さそう
+        1. update z, wpt, ...
+        2. update parameters if neseccary
+        """
+
+        rand_perm = torch.randperm(self.totalN, device=self.device)
+        for n in range(self.totalN // subsample_size + 1):
+            end = self.totalN if n == (self.totalN // subsample_size) else subsample_size * (n + 1)
+            idx = rand_perm[subsample_size * n: end]
+            self._sampling(idx)
+
+        if(parameter_update):
+            self._update_parameters()
+
+        return self.log_perplexity()
+
+
     def _sampling(self, idx):
         """
         1. sampleing z
@@ -94,7 +113,7 @@ class LDA(MCMCModel):
 
         # wptとか更新
         ones = torch.ones(len(idx), device=self.device, dtype=torch.int64)
-        self._wpt.index_put_([before, self.wordids[idx]], - ones, accumulate=True)
+        self._wpt.index_put_([before, self.wordids[idx]], -ones, accumulate=True)
         self._wpt.index_put_([self.z[idx], self.wordids[idx]], ones, accumulate=True)
         self._tpd.index_put_([self.docids[idx], before], -ones, accumulate=True)
         self._tpd.index_put_([self.docids[idx], self.z[idx]], ones, accumulate=True)
@@ -121,7 +140,7 @@ class LDA(MCMCModel):
         probs /= self._nd[self.docids[idx]][:, None] + self.alpha.sum() - a
 
         """ calculation checking """
-        # for i in range(10):
+        # for i in range(100):
         #     n = random.randrange(subsample_size)  # any
         #     k = random.randrange(self.K)  # any
         #     z = self.z[idx[n]]
@@ -129,9 +148,10 @@ class LDA(MCMCModel):
         #     d = self.docids[idx[n]]
         #     a0 = (1 if z == k else 0)
         #     assert a[n, k] == a0
-        #     assert(probs[n, k] == (self._wpt[k, v] - a0 + self.beta[v]) / (self._wt[k] + self.beta.sum() - a0)
-        #            * (self._tpd[d, k] - a0 + self.alpha[k]) / (self._nd[d] + self.alpha.sum() - a0))
+        #     assert torch.allclose(probs[n, k], (self._wpt[k, v] - a0 + self.beta[v]) / (self._wt[k] + self.beta.sum() - a0)
+        #                           * (self._tpd[d, k] - a0 + self.alpha[k]) / (self._nd[d] + self.alpha.sum() - a0))
 
+        probs /= torch.sum(probs, dim=1, keepdim=True)
         return probs
 
 
@@ -164,32 +184,13 @@ class LDA(MCMCModel):
 
     def log_perplexity(self, testset=None):
         if(testset is None):
+            theta = self.theta(to_cpu=False)
             phi = self.phi(to_cpu=False)
-            return phi[self.z, self.wordids].log().sum().item()
+            p = torch.mm(theta, phi)
+            return p[self.docids, self.wordids].log().sum().item()
         else:
             # TODO
             return None
-
-
-    def summary(self, summary_args):
-        """
-        summary_args:
-            summary_path
-            full_docs
-            morphome_key
-        """
-
-        # torch.save(self, summary_args.summary_path.joinpath("model.pickle"))
-
-        self._summary_print(summary_args)
-        self._sammary_wordcloud(summary_args)
-
-        # result.xlsx
-        wb = openpyxl.Workbook()
-        tmp_ws = wb[wb.get_sheet_names()[0]]
-        self._summary_to_excel(summary_args, wb)
-        wb.remove_sheet(tmp_ws)
-        wb.save(summary_args.summary_path.joinpath("result.xlsx"))
 
 
     def _summary_print(self, summary_args):
