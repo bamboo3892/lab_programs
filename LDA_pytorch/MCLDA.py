@@ -194,7 +194,7 @@ class MCLDA(LDABase):
         self._wpt_rt[rt].index_put_([self.z_rt[rt][idx], self.wordids_rt[rt][idx]], ones, accumulate=True)
         self._tpd.index_put_([self.docids_rt[rt][idx], before], -ones, accumulate=True)
         self._tpd.index_put_([self.docids_rt[rt][idx], self.z_rt[rt][idx]], ones, accumulate=True)
-        self._wt = torch.sum(self._wpt_rt[rt], 1)
+        self._wt_rt[rt] = torch.sum(self._wpt_rt[rt], 1)
 
         """ calculation checking """
         # for i in range(100):
@@ -412,5 +412,101 @@ class MCLDA(LDABase):
             return None
 
 
-    def summary(self, summary_args):
+    def _summary_print(self, summary_args):
         pass
+
+
+    def _sammary_wordcloud(self, summary_args):
+        pass
+
+
+    def _summary_to_excel(self, summary_args, wb):
+
+        theta = self.theta()
+        alpha = self.alpha.cpu().detach().numpy().copy()
+        phi = [self.phi(rt) for rt in range(self.Rt)]
+        beta = [self.beta_rt[rt].cpu().detach().numpy().copy() for rt in range(self.Rt)]
+        mu = [self.mu(rm) for rm in range(self.Rm)]
+        sigma = [self.sigma(rm) for rm in range(self.Rm)]
+        rho = [self.rho(rh) for rh in range(self.Rh)]
+        rho_h = [self.rho_h_rh[rh].cpu().detach().numpy().copy() for rh in range(self.Rh)]
+
+        args_dict = {k: self.args.__dict__[k] for k in self.args.__dict__ if not k.startswith("__")}
+        args_dict_str = args_dict.copy()
+        for k in args_dict_str:
+            if(not isinstance(args_dict_str[k], (int, float, complex, bool))):
+                args_dict_str[k] = str(args_dict_str[k])
+        ws = wb.create_sheet("args")
+        writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
+
+        ws = wb.create_sheet("mu_sigma")
+        writeMatrix(ws, mu, 1, 1,
+                    row_names=summary_args.full_tensors["measurement_keys"],
+                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    addDataBar=True)
+        writeMatrix(ws, sigma, 1, self.K + 3,
+                    row_names=summary_args.full_tensors["measurement_keys"],
+                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    addDataBar=True)
+
+        ws = wb.create_sheet("rho")
+        row = 1
+        for r in range(self.Rh):
+            ws.cell(row, 1, summary_args.full_tensors["habit_keys"][r])
+            writeMatrix(ws, rho[r].T, row, 1,
+                        row_names=summary_args.full_tensors["habit_levels"][r],
+                        column_names=[f"topic{k+1}" for k in range(self.K)],
+                        addDataBar=True, dataBarBoundary=[0., 1.])
+            _, counts = torch.unique(self.x_rh[r], return_counts=True)
+            counts = counts.cpu().detach().numpy()
+            counts = counts / np.sum(counts)
+            writeMatrix(ws, counts[:, None], row, self.K + 3, column_names=["data distribution"],
+                        addDataBar=True, dataBarBoundary=[0., 1.])
+            row += self.n_rh[r] + 2
+
+        ws = wb.create_sheet("alpha_hyper")
+        writeVector(ws, alpha, axis="row", names=[f"topic{k+1}" for k in range(self.K)],
+                    addDataBar=True)
+
+        ws = wb.create_sheet("beta_hyper")
+        for r in range(self.Rt):
+            writeVector(ws, beta[r], column=r * 3 + 1,
+                        axis="row", names=self.word_dict_rt[r],
+                        addDataBar=True)
+
+        ws = wb.create_sheet("theta")
+        writeMatrix(ws, theta, 1, 1,
+                    row_names=[f"doc{d+1}" for d in range(self.D)],
+                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    addDataBar=True, dataBarBoundary=[0., 1.])
+
+        for r in range(self.Rt):
+            ws = wb.create_sheet(f"phi_r{r}")
+            writeMatrix(ws, phi[r].T, 1, 1,
+                        row_names=self.word_dict_rt[r],
+                        column_names=[f"topic{k+1}" for k in range(self.K)],
+                        addDataBar=True)
+
+            ws = wb.create_sheet(f"phi_r{r}_sorted")
+            writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=1,
+                              row_names=self.word_dict_rt[r], column_names=[f"topic{k+1}" for k in range(self.K)],
+                              maxwrite=100, order="higher")
+            writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=self.K + 3,
+                              row_names=None, column_names=[f"topic{k+1}" for k in range(self.K)],
+                              maxwrite=100, order="higher",
+                              addDataBar=True)
+
+        # topics file
+        wb = openpyxl.Workbook()
+        tmp_ws = wb[wb.get_sheet_names()[0]]
+
+        for k in range(self.K):
+            ws = wb.create_sheet(f"topic_{k}")
+            for r in range(self.Rt):
+                ws.cell(1, r + 1, f"r{r}")
+                idx = np.argsort(phi[r][k])[::-1]
+                dat = np.array(self.word_dict_rt[r])[idx].tolist()
+                writeVector(ws, dat, 2, r + 1, axis="row", names=None)
+
+        wb.remove_sheet(tmp_ws)
+        wb.save(summary_args.summary_path.joinpath("topics.xlsx"))

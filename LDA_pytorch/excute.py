@@ -58,6 +58,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     measurementKeysHC = tensors["measurement_keys"]
     habitKeysHC = tensors["habit_keys"]
     medicineKeysHC = tensors["medicine_keys"]
+    tensors["habit_levels"] = habitLevels2
 
     docs = [[] for _ in range(len(morphomesKeys))]
     measurements = [[] for _ in range(len(measurementKeysHC))]
@@ -74,14 +75,15 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
             for rh, key in enumerate(habitKeysHC):
                 habits[rh].append(tensors[key][idx])
     data = [docs, np.array(measurements), np.array(habits)]
+    # data = [docs, np.array([]), np.array([])]
     # data = [[], np.array(measurements), np.array([])]
     # data = [[], np.array([]), np.array(habits)]
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 100
+    args.num_steps = 200
     args.step_subsample = 10
-    args.K = 3
+    args.K = 10
     args.D = len(docs[0]) if len(docs) != 0 else (len(measurements[0]) if len(measurements) != 0 else (len(habits[0]) if len(habits) != 0 else 0))
     args.n_rh = [len(habitLevels2[rh]) for rh in range(len(habitKeysHC))]
     # args.n_rh = []
@@ -91,6 +93,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.coef_alpha = 1
 
     summary_args.full_docs = docs
+    summary_args.full_tensors = tensors
     print(f"D: {args.D}, K: {args.K}")
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
