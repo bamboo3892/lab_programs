@@ -6,7 +6,7 @@ import pyro.distributions as dist
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
 
-# DEVICE = torch.device("cuda:0")
+DEVICE = torch.device("cuda:0")
 # DEVICE = torch.device("cpu")
 
 # b = torch.zeros((3), device=DEVICE)
@@ -17,9 +17,12 @@ from utils.wordcloud_util import create_wordcloud
 
 # create_wordcloud(["apple", "banana", "orange"], "aaa.png")
 
-m = torch.tensor([0, 0], dtype=torch.float64)
-s = torch.tensor([1, 1], dtype=torch.float64)
-x = torch.randn([5, 2])
-a = dist.Normal(m, s).log_prob(x).exp()
+# m = torch.tensor([0, 0], dtype=torch.float64)
+# s = torch.tensor([1, 1], dtype=torch.float64)
+# x = torch.randn([5, 2])
+# a = dist.Normal(m, s).log_prob(x).exp()
+
+b = torch.zeros((3), device=DEVICE)
+torch.save(b, "model.pickle")
 
 print("aaaaaa")

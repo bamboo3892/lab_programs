@@ -6,6 +6,7 @@ import pyro.distributions as dist
 import openpyxl
 
 from LDA_pytorch.ModelBase import LDABase
+from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
 
@@ -47,7 +48,6 @@ class MCLDA(LDABase):
         self.V_rt = [0 for _ in range(self.Rt)]            # [Rt]
         self.totalN_rt = [0 for _ in range(self.Rt)]       # [Rt]
         self.n_rh = args.n_rh                              # [Rh]
-        self.n_total_observations = (self.Rm + self.Rh) * D
         self.word_count_rt = [{} for _ in range(self.Rt)]  # [Rt][V_rt]
         self.word_dict_rt = [[] for _ in range(self.Rt)]   # [Rt][V_rt]
         self.wordids_rt = [[] for _ in range(self.Rt)]     # [Rt][totalN_rt]
@@ -95,7 +95,6 @@ class MCLDA(LDABase):
             self.totalN_rt[rt] = len(self.wordids_rt[rt])
             self.wordids_rt[rt] = torch.tensor(self.wordids_rt[rt], device=self.device, dtype=torch.int64)
             self.docids_rt[rt] = torch.tensor(self.docids_rt[rt], device=self.device, dtype=torch.int64)
-            self.n_total_observations += self.totalN_rt[rt]
 
         # init latent variables...
         for rt in range(self.Rt):
@@ -418,26 +417,49 @@ class MCLDA(LDABase):
         pass
 
 
-    def calc_mean_accuracy_from_testset(self, testset, target, r, masking_ratio=0.2):
+    def set_testset(self, testset):
+        self.model_infer = MCLDA_infer(self, testset, {})
+
+
+    def calc_mean_accuracy_from_testset(self, masked_records, num_subsample_partitions, max_iter=100):
         """
-        未知のデータに対するこのモデルの平均正解率を計算
+        未知のデータに対するこのモデルの平均正解率を計算する
+        事前にset_testsetでテストセットを登録する必要がある
         Parametera
         ----------
-        testset: the same format of data for MCLDA constructer
-        target: "rt" or "rm" or "rh"
-        r: record id
-        masking_ratio: neccesary if target="rt"
+        masked_records: {"rt": [masked_record_id, ...], "rm": [...], "rh": [...]}
+        num_subsample_partitions: 説明はstepを参照
+        Return
+        ------
+        mean_accuracy: {"rt": [mean_accuracy, ...], "rm": [...], "rh": [...]}
+                       the same shape of test_records argument
         """
-        target = target.lower()
-        if(target == "rt"):
 
-            pass
-        elif(target == "rm"):
+        self.model_infer.change_mask(masked_records)
 
-            pass
-        elif(target == "rh"):
+        # learn step
+        losses = []
+        for n in range(max_iter):
+            probability = self.model_infer.step(num_subsample_partitions)
+            losses.append(probability)
+            if(n >= 5 and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
+                break
 
-            pass
+        return self.model_infer.calc_mean_accuracy(masked_records)
+
+
+    def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions):
+        mean_accuracy = _mask_validate({})
+        for rt in range(self.Rt):
+            a = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions)
+            mean_accuracy["rt"].append(a["rt"][0])
+        for rm in range(self.Rm):
+            a = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions)
+            mean_accuracy["rm"].append(a["rm"][0])
+        for rh in range(self.Rh):
+            a = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions)
+            mean_accuracy["rh"].append(a["rh"][0])
+        return mean_accuracy
 
 
     def coherence(self, rt, k, w2v_model):

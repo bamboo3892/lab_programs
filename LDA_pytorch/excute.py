@@ -3,22 +3,26 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import openpyxl
 
 from analysis.analyzeHealthCheck import habitLevels2
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
+from utils.general_util import Args
+from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 
 
 seed = 1
 np.random.seed(seed)
+torch.manual_seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def excuteLDA(pathDocs, pathResult, *,
               args=None, summary_args=None):
 
-    args = args if args is not None else type("args", (object,), {})
-    summary_args = summary_args if summary_args is not None else type("args", (object,), {})
+    args = args if args is not None else Args()
+    summary_args = summary_args if summary_args is not None else Args()
 
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         docs = json.load(f)
@@ -44,11 +48,101 @@ def excuteLDA(pathDocs, pathResult, *,
 
 
 def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
-                args=None, summary_args=None):
+                args=None, summary_args=None,
+                pathTestdocs=None, pathTesttensors=None):
 
-    args = args if args is not None else type("args", (object,), {})
-    summary_args = summary_args if summary_args is not None else type("args", (object,), {})
+    args = args if args is not None else Args()
+    summary_args = summary_args if summary_args is not None else Args()
 
+    documents, tensors, data = _make_data_1(pathDocs, pathTensors)
+    testset = None
+    if(pathTestdocs is not None and pathTesttensors is not None):
+        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors)
+
+    model_class = MCLDA.MCLDA
+    args.modelType = "MCLDA"
+    args.num_steps = 100
+    args.step_subsample = 10
+    args.K = 7
+    args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
+    args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
+    # args.n_rh = []
+    args.auto_beta = False
+    args.auto_alpha = False
+    args.coef_beta = 1
+    args.coef_alpha = 1
+
+    summary_args.full_docs = documents
+    summary_args.full_tensors = tensors
+    print(f"D: {args.D}, K: {args.K}")
+    print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
+    print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
+
+    _excute(model_class, args, data, pathResult, summary_args, testset=testset)
+
+
+def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
+                        pathTestdocs=None, pathTesttensors=None):
+
+    args = Args()
+    summary_args = Args()
+
+    documents, tensors, data = _make_data_1(pathDocs, pathTensors)
+    testset = None
+    if(pathTestdocs is not None and pathTesttensors is not None):
+        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors)
+
+    model_class = MCLDA.MCLDA
+    args.modelType = "MCLDA"
+    args.num_steps = 10
+    args.step_subsample = 10
+    # args.K = 10
+    args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
+    args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
+    args.auto_beta = False
+    args.auto_alpha = False
+    args.coef_beta = 1
+    args.coef_alpha = 1
+
+    summary_args.full_docs = documents
+    summary_args.full_tensors = tensors
+
+    Ks = np.arange(1, 100, 30)
+    for K in Ks:
+        args.K = K
+        print(f"D: {args.D}, K: {args.K}")
+        _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args, testset=testset)
+
+    accuracies_rt = []
+    accuracies_rm = []
+    accuracies_rh = []
+    for K in Ks:
+        with open(str(pathResult.joinpath(f"K{K}", "accuracy.json")), "r", encoding="utf_8_sig") as f:
+            accuracy = json.load(f)
+            accuracies_rt.append(accuracy["rt"])
+            accuracies_rm.append(accuracy["rm"])
+            accuracies_rh.append(accuracy["rh"])
+
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Rt")
+    writeMatrix(ws, accuracies_rt, 1, 1,
+                row_names=Ks,
+                column_names=tensors["tensor_keys"],
+                addDataBar=True)
+    ws = wb.create_sheet("Rm")
+    writeMatrix(ws, accuracies_rm, 1, 1,
+                row_names=Ks,
+                column_names=tensors["measurement_keys"],
+                addDataBar=True)
+    ws = wb.create_sheet("Rh")
+    writeMatrix(ws, accuracies_rh, 1, 1,
+                row_names=Ks,
+                column_names=tensors["habit_keys"],
+                addDataBar=True)
+    wb.save(pathResult.joinpath("accuracy.xlsx"))
+
+
+def _make_data_1(pathDocs, pathTensors):
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         documents = json.load(f)
     with open(str(pathTensors), 'rb') as f:
@@ -68,6 +162,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
         pid = int(doc["p_seq"])
         if(pid in tensors["ids"]):
             idx = tensors["ids"].index(pid)
+            if(tensors["ＧＯＴ（ＡＳＴ）"][idx] > 200):
+                continue
             for rt, key in enumerate(morphomesKeys):
                 docs[rt].append(doc[key + "_morphomes"])
             for rm, key in enumerate(measurementKeysHC):
@@ -79,29 +175,11 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     # data = [[], np.array(measurements), np.array([])]
     # data = [[], np.array([]), np.array(habits)]
 
-    model_class = MCLDA.MCLDA
-    args.modelType = "MCLDA"
-    args.num_steps = 200
-    args.step_subsample = 10
-    args.K = 10
-    args.D = len(docs[0]) if len(docs) != 0 else (len(measurements[0]) if len(measurements) != 0 else (len(habits[0]) if len(habits) != 0 else 0))
-    args.n_rh = [len(habitLevels2[rh]) for rh in range(len(habitKeysHC))]
-    # args.n_rh = []
-    args.auto_beta = False
-    args.auto_alpha = False
-    args.coef_beta = 1
-    args.coef_alpha = 1
-
-    summary_args.full_docs = docs
-    summary_args.full_tensors = tensors
-    print(f"D: {args.D}, K: {args.K}")
-    print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
-    print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
-
-    _excute(model_class, args, data, pathResult, summary_args)
+    return documents, tensors, data
 
 
-def _excute(modelClass, args, data, pathResult, summary_args):
+def _excute(modelClass, args, data, pathResult, summary_args,
+            testset=None):
 
     print(f"Model: {args.modelType}  (to {pathResult})")
 
@@ -116,10 +194,18 @@ def _excute(modelClass, args, data, pathResult, summary_args):
         probability = model.step(args.step_subsample)
         losses.append(probability)
         print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
-        if(n == 46):
-            pass
 
     plt.plot(losses)
     plt.savefig(pathResult.joinpath("probability.png"))
     plt.clf()
+    torch.save(model, pathResult.joinpath("model.pickle"))
     model.summary(summary_args)
+
+    if(testset is not None):
+        model.set_testset(testset)
+        # accuracy = model.calc_all_mean_accuracy_from_testset(args.step_subsample)
+        accuracy = model.calc_mean_accuracy_from_testset({"rt": [0]}, args.step_subsample, max_iter=5)
+
+        with open(str(pathResult.joinpath("accuracy.json")), "w", encoding="utf_8_sig") as output:
+            text = json.dumps(accuracy, ensure_ascii=False, indent=4)
+            output.write(text)

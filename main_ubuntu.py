@@ -71,13 +71,14 @@ if __name__ == '__main__':
     b13 = False  # Tucker decomp tensorly
     b15 = False  # Tucker decomp tensorly (NTD)
 
-    b16 = True  # execute sepReviewsToMorphomes for multi channel?
-    b17 = True  # makeTensor2 for multi channel
+    b16 = False  # execute sepReviewsToMorphomes for multi channel?
+    b17 = False  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
-    b25 = True  # excute MCLDA (torch)
+    b25 = False  # excute MCLDA (torch)
+    b26 = True  # excute MCLDA for each K (torch)
 
     b11 = False  # HC statistics
 
@@ -311,20 +312,22 @@ if __name__ == '__main__':
 
     if(b16):
         f0 = time.time()
-        for m in range(len(input_)):
-            shutil.copyfile(input_[m], morphomes[m])
-            for n in range(len(MULTI_CHANNEL_KEYS)):
-                print("")
-                sepReviewsToMorphomes.sepReviews(morphomes[m],
-                                                 morphomes[m],
-                                                 intputTextKey=MULTI_CHANNEL_KEYS[n],
-                                                 outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
-                                                 blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
-                                                 blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
-                                                            "こと", "もの", "事", "よう", "ため", "の", "そう"],
-                                                 removeRateFromBtm=(0.03 if m != 1 else 0.05),
-                                                 removeRateFromTop=0.15,
-                                                 minWordsInSentence=0)
+        print("Start separating reviews to morphomes")
+        # for m in range(len(input_)):
+        m = 0
+        shutil.copyfile(input_[m], morphomes[m])
+        for n in range(len(MULTI_CHANNEL_KEYS)):
+            print("")
+            sepReviewsToMorphomes.sepReviews(morphomes[m],
+                                             morphomes[m],
+                                             intputTextKey=MULTI_CHANNEL_KEYS[n],
+                                             outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
+                                             blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
+                                             blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
+                                                        "こと", "もの", "事", "よう", "ため", "の", "そう"],
+                                             removeRateFromBtm=(0.03 if m != 1 else 0.05),
+                                             removeRateFromTop=0.15,
+                                             minWordsInSentence=0)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b17):
@@ -364,7 +367,15 @@ if __name__ == '__main__':
     if(b25):
         f0 = time.time()
         LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
-                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"))
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
+                                       pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b26):
+        f0 = time.time()
+        LDA_pytorch.excute.excuteMCLDA_K_range(morphomes[2], tensors[2],
+                                               RESULT.joinpath("multi_channel", "torch", "MCLDA", "Ks"),
+                                               pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 
