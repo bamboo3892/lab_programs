@@ -71,8 +71,8 @@ if __name__ == '__main__':
     b13 = False  # Tucker decomp tensorly
     b15 = False  # Tucker decomp tensorly (NTD)
 
-    b16 = False  # execute sepReviewsToMorphomes for multi channel?
-    b17 = False  # makeTensor2 for multi channel
+    b16 = True  # execute sepReviewsToMorphomes for multi channel?
+    b17 = True  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
@@ -320,8 +320,10 @@ if __name__ == '__main__':
                                                  intputTextKey=MULTI_CHANNEL_KEYS[n],
                                                  outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
                                                  blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
-                                                 blackWord=["こと", "事", "よう"],
-                                                 removeRateFromBtm=0.03, removeRateFromTop=0.15,
+                                                 blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
+                                                            "こと", "もの", "事", "よう", "ため", "の", "そう"],
+                                                 removeRateFromBtm=(0.03 if m != 1 else 0.05),
+                                                 removeRateFromTop=0.15,
                                                  minWordsInSentence=0)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 

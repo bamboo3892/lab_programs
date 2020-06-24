@@ -11,7 +11,12 @@ class LDABase(metaclass=ABCMeta):
 
 
     @abstractmethod
-    def log_perplexity(self, testset=None):
+    def log_probability(self, testset=None):
+        pass
+
+
+    @abstractmethod
+    def perplexity(self, testset):
         pass
 
 

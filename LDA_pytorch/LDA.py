@@ -96,7 +96,7 @@ class LDA(LDABase):
         if(parameter_update):
             self._update_parameters()
 
-        return self.log_perplexity()
+        return self.log_probability()
 
 
     def _sampling(self, idx):
@@ -182,7 +182,7 @@ class LDA(LDABase):
             return phi
 
 
-    def log_perplexity(self, testset=None):
+    def log_probability(self, testset=None):
         if(testset is None):
             theta = self.theta(to_cpu=False)
             phi = self.phi(to_cpu=False)
@@ -191,6 +191,13 @@ class LDA(LDABase):
         else:
             # TODO
             return None
+
+
+    def perplexity(self, testset):
+        if(testset is None):
+            return np.exp(- self.log_probability() / self.totalN)
+        else:
+            pass
 
 
     def _summary_print(self, summary_args):

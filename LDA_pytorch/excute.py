@@ -113,13 +113,13 @@ def _excute(modelClass, args, data, pathResult, summary_args):
     model = modelClass(args, data)
     losses = []
     for n in range(args.num_steps):
-        perplexity = model.step(args.step_subsample)
-        losses.append(perplexity)
-        print("i:{:<5d} loss:{:<f}".format(n + 1, perplexity))
+        probability = model.step(args.step_subsample)
+        losses.append(probability)
+        print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
         if(n == 46):
             pass
 
     plt.plot(losses)
-    plt.savefig(pathResult.joinpath("perplexity.png"))
+    plt.savefig(pathResult.joinpath("probability.png"))
     plt.clf()
     model.summary(summary_args)

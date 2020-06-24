@@ -47,6 +47,7 @@ class MCLDA(LDABase):
         self.V_rt = [0 for _ in range(self.Rt)]            # [Rt]
         self.totalN_rt = [0 for _ in range(self.Rt)]       # [Rt]
         self.n_rh = args.n_rh                              # [Rh]
+        self.n_total_observations = (self.Rm + self.Rh) * D
         self.word_count_rt = [{} for _ in range(self.Rt)]  # [Rt][V_rt]
         self.word_dict_rt = [[] for _ in range(self.Rt)]   # [Rt][V_rt]
         self.wordids_rt = [[] for _ in range(self.Rt)]     # [Rt][totalN_rt]
@@ -94,6 +95,7 @@ class MCLDA(LDABase):
             self.totalN_rt[rt] = len(self.wordids_rt[rt])
             self.wordids_rt[rt] = torch.tensor(self.wordids_rt[rt], device=self.device, dtype=torch.int64)
             self.docids_rt[rt] = torch.tensor(self.docids_rt[rt], device=self.device, dtype=torch.int64)
+            self.n_total_observations += self.totalN_rt[rt]
 
         # init latent variables...
         for rt in range(self.Rt):
@@ -173,7 +175,7 @@ class MCLDA(LDABase):
         #     s += torch.sum(self.z_rh[:, d] == k)
         #     assert self._tpd[d, k] == s
 
-        return self.log_perplexity()
+        return self.log_probability()
 
 
     def _sampling_rt(self, rt, idx):
@@ -388,7 +390,7 @@ class MCLDA(LDABase):
             return rho
 
 
-    def log_perplexity(self, testset=None):
+    def log_probability(self, testset=None):
         if(testset is None):
             p = 0.
             theta = self.theta(to_cpu=False)
@@ -410,6 +412,36 @@ class MCLDA(LDABase):
         else:
             # TODO
             return None
+
+
+    def perplexity(self, testset):
+        pass
+
+
+    def calc_mean_accuracy_from_testset(self, testset, target, r, masking_ratio=0.2):
+        """
+        未知のデータに対するこのモデルの平均正解率を計算
+        Parametera
+        ----------
+        testset: the same format of data for MCLDA constructer
+        target: "rt" or "rm" or "rh"
+        r: record id
+        masking_ratio: neccesary if target="rt"
+        """
+        target = target.lower()
+        if(target == "rt"):
+
+            pass
+        elif(target == "rm"):
+
+            pass
+        elif(target == "rh"):
+
+            pass
+
+
+    def coherence(self, rt, k, w2v_model):
+        pass
 
 
     def _summary_print(self, summary_args):
