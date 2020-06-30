@@ -25,7 +25,7 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
                 matrix_font=None,
                 row_name_font=Font(color="006400"),
                 column_name_font=Font(color="006400"),
-                addDataBar=False, dataBarBoundary=None):
+                addDataBar=False, dataBarBoundary=None, dataBarAxis=None):
 
     offset_row = row if column_names is None else row + 1
     offset_column = column if row_names is None else column + 1
@@ -47,14 +47,14 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
 
     if(addDataBar):
         addDataBarRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength,
-                        boundary=dataBarBoundary)
+                        boundary=dataBarBoundary, axis=dataBarAxis)
 
 
 def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, column_names=None,
                       maxwrite=None, order="higher",
                       matrix_font=None,
                       name_font=Font(color="006400"),
-                      addDataBar=False, dataBarBoundary=None):
+                      addDataBar=False, dataBarBoundary=None, dataBarAxis=None):
     """
     names is none: write sorted matrix values
     names is not none: write sorted names
@@ -91,14 +91,15 @@ def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, colum
     if(axis == 0):
         writeMatrix(ws, data, row=row, column=column, column_names=column_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary)
+                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary, dataBarAxis=dataBarAxis)
     elif(axis == 1):
         writeMatrix(ws, data, row=row, column=column, row_names=row_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary)
+                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary, dataBarAxis=dataBarAxis)
 
 
-def addDataBarRules(ws, row1, row2, column1, column2, *, color="00bfff", boundary=None):
+def addDataBarRules(ws, row1, row2, column1, column2, *,
+                    color="00bfff", boundary=None, axis=None):
     if(row1 > row2):
         a = row1
         row1 = row2
@@ -107,6 +108,13 @@ def addDataBarRules(ws, row1, row2, column1, column2, *, color="00bfff", boundar
         a = column1
         column1 = column2
         column2 = a
+
+    if(axis == "column"):
+        for row in range(row1, row2 + 1):
+            addDataBarRules(ws, row, row, column1, column2, color=color, boundary=boundary, axis=None)
+    elif(axis == "row"):
+        for column in range(column1, column2 + 1):
+            addDataBarRules(ws, row1, row2, column, column, color=color, boundary=boundary, axis=None)
 
     area = getAreaLatter(row1, row2, column1, column2)
     # data_bar = DataBar(cfvo=[FormatObject(type='min'), FormatObject(type='max')], color=color, showValue=None, minLength=0, maxLength=100)

@@ -222,12 +222,15 @@ class MCLDA_infer:
         probs /= self._nd[idx][:, None] + self.alpha.sum() - a
 
         # probs *= dist.Normal(self.M._mean_rm[rm], self.M._std_rm[rm]).log_prob(x).exp()
+
         std2 = self.M._std_rm[rm] ** 2
         mean = self.M._xt_rm[rm] * self.M.sigma2_h_rm[rm] * self.M._mean_rm[rm] + std2 * self.M.mu_h_rm[rm]  # [K]
         mean /= self.M._xt_rm[rm] * self.M.sigma2_h_rm[rm] + std2
+        # mean = self.M._mean_rm[rm]
         mean[torch.isnan(mean)] = self.M.mu_h_rm[rm]
-        var = (self.M.nu_h_rm * self.M.sigma2_h_rm[rm] + self.M._xt_rm[rm] * std2) / (self.M.nu_h_rm + self.M._xt_rm[rm] - 2)  # [K]
-        probs *= dist.Normal(mean, var).log_prob(x).exp()
+        # var = (self.M.nu_h_rm * self.M.sigma2_h_rm[rm] + self.M._xt_rm[rm] * std2) / (self.M.nu_h_rm + self.M._xt_rm[rm] - 2)  # [K]
+        var = (self.M.nu_h_rm * self.M.sigma2_h_rm[rm] + self.M._xt_rm[rm] * std2) / (self.M.nu_h_rm + self.M._xt_rm[rm])  # [K]
+        probs *= dist.Normal(mean, torch.pow(var, 0.5)).log_prob(x).exp()
 
         """ calculation checking """
         # for i in range(100):

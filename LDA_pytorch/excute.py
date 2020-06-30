@@ -12,7 +12,7 @@ from utils.general_util import Args
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 
 
-seed = 1
+seed = 123123
 np.random.seed(seed)
 torch.manual_seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -29,7 +29,7 @@ def excuteLDA(pathDocs, pathResult, *,
 
     model_class = LDA.LDA
     args.modelType = "LDA"
-    args.num_steps = 200
+    args.num_steps = 100
     args.step_subsample = 100000
     args.K = 7
     args.auto_beta = False
@@ -61,7 +61,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 200
+    args.num_steps = 100
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -78,7 +78,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    _excute(model_class, args, data, pathResult, summary_args, testset=testset)
+    # _excute(model_class, args, data, pathResult, summary_args, testset=testset)
+    _excute(model_class, args, data, pathResult, summary_args)
 
 
 def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
@@ -167,6 +168,9 @@ def _make_data_1(pathDocs, pathTensors):
             for rt, key in enumerate(morphomesKeys):
                 docs[rt].append(doc[key + "_morphomes"])
             for rm, key in enumerate(measurementKeysHC):
+                # if(key == "ＨｂＡ１ｃ（ＮＧＳＰ）"):
+                #     measurements[rm].append(tensors[key][idx] + np.random.randn() * 0.1)
+                # else:
                 measurements[rm].append(tensors[key][idx])
             for rh, key in enumerate(habitKeysHC):
                 habits[rh].append(tensors[key][idx])

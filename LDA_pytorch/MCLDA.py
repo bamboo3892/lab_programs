@@ -60,8 +60,9 @@ class MCLDA(LDABase):
 
         self.alpha = torch.full([K], args.coef_alpha, device=self.device, dtype=torch.float64)                           # [K]
         self.beta_rt = [None for _ in range(self.Rt)]                                                                    # [Rt][V_rt]
-        self.mu_h_rm = torch.mean(measurements, 1)                                                                        # [Rm]
-        self.nu_h_rm = torch.tensor(3, device=self.device, dtype=torch.float64)                                          #
+        self.mu_h_rm = torch.mean(measurements, 1)                                                                       # [Rm]
+        # self.nu_h_rm = torch.tensor(3, device=self.device, dtype=torch.float64)                                          #
+        self.nu_h_rm = torch.tensor(0.01, device=self.device, dtype=torch.float64)                                          #
         self.sigma2_h_rm = torch.var(measurements, 1)                                                                    # [Rm]
         self.rho_h_rh = [torch.ones([self.n_rh[rh]], device=self.device, dtype=torch.float64) for rh in range(self.Rh)]  # [Rh][n_rh]
 
@@ -272,8 +273,9 @@ class MCLDA(LDABase):
         """
         本来_mean_rmと_std_rmは自分の影響を除いて計算するべきだけど，近似的にかわらないとした
 
-        事後分布の平均は，事後分布の分散が既知(=self._std_rm[rm, k])として求め，
-        事後分布の分散は，事後分布の平均が既知(=self._mean_rm[rm, k])として求めた．
+        # 事後分布の平均は，事後分布の分散が既知(=self._std_rm[rm, k])として求め，
+        # 事後分布の分散は，事後分布の平均が既知(=self._mean_rm[rm, k])として求めた．
+        事後分布の分散は，全体の分散と線形結合した
         事前分布：
         mean ~ Normal(self.mu_h_rm[rm, k], self._std_rm[rm, k])
         var ~ Scaled-inv-chi-squared(self.mu_h_rm[rm, k], self.sigma2_h_rm[rm, k])
@@ -290,12 +292,15 @@ class MCLDA(LDABase):
         probs /= self._nd[idx][:, None] + self.alpha.sum() - a
 
         # probs *= dist.Normal(self._mean_rm[rm], self._std_rm[rm]).log_prob(x).exp()
+
         std2 = self._std_rm[rm] ** 2
         mean = self._xt_rm[rm] * self.sigma2_h_rm[rm] * self._mean_rm[rm] + std2 * self.mu_h_rm[rm]  # [K]
         mean /= self._xt_rm[rm] * self.sigma2_h_rm[rm] + std2
+        # mean = self._mean_rm[rm]
         mean[torch.isnan(mean)] = self.mu_h_rm[rm]
-        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * std2) / (self.nu_h_rm + self._xt_rm[rm] - 2)  # [K]
-        probs *= dist.Normal(mean, var).log_prob(x).exp()
+        # var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * std2) / (self.nu_h_rm + self._xt_rm[rm] - 2)  # [K]
+        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * std2) / (self.nu_h_rm + self._xt_rm[rm])  # [K]
+        probs *= dist.Normal(mean, torch.pow(var, 0.5)).log_prob(x).exp()
 
         """ calculation checking """
         # for i in range(100):
@@ -406,7 +411,8 @@ class MCLDA(LDABase):
 
     def sigma(self, rm, to_cpu=True):
         # sigma = self._std_rm[rm]
-        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm] - 2)
+        # var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm] - 2)
+        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm])
         sigma = torch.pow(var, 0.5)
         if(to_cpu):
             return sigma.cpu().detach().numpy().copy()
@@ -551,11 +557,11 @@ class MCLDA(LDABase):
         writeMatrix(ws, mu, 1, 1,
                     row_names=summary_args.full_tensors["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True)
+                    addDataBar=True, dataBarAxis="column")
         writeMatrix(ws, sigma, 1, self.K + 3,
                     row_names=summary_args.full_tensors["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True)
+                    addDataBar=True, dataBarAxis="column")
 
         ws = wb.create_sheet("rho")
         row = 1
