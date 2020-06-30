@@ -61,9 +61,9 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 100
+    args.num_steps = 200
     args.step_subsample = 10
-    args.K = 7
+    args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
     args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
     # args.n_rh = []
@@ -94,7 +94,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 10
+    args.num_steps = 100
     args.step_subsample = 10
     # args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -107,7 +107,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
 
-    Ks = np.arange(1, 100, 30)
+    Ks = np.arange(1, 100, 10)
     for K in Ks:
         args.K = K
         print(f"D: {args.D}, K: {args.K}")
@@ -193,7 +193,8 @@ def _excute(modelClass, args, data, pathResult, summary_args,
     for n in range(args.num_steps):
         probability = model.step(args.step_subsample)
         losses.append(probability)
-        print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
+        if((n + 1) % 10 == 0):
+            print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
 
     plt.plot(losses)
     plt.savefig(pathResult.joinpath("probability.png"))

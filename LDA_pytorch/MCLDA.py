@@ -60,8 +60,9 @@ class MCLDA(LDABase):
 
         self.alpha = torch.full([K], args.coef_alpha, device=self.device, dtype=torch.float64)                           # [K]
         self.beta_rt = [None for _ in range(self.Rt)]                                                                    # [Rt][V_rt]
-        # self.mu_h_rm = torch.mean(measurements, 1)                                                                       # [Rm]
-        # self.sigma_h_rm = torch.std(measurements, 1)                                                                     # [Rm]
+        self.mu_h_rm = torch.mean(measurements, 1)                                                                        # [Rm]
+        self.nu_h_rm = torch.tensor(3, device=self.device, dtype=torch.float64)                                          #
+        self.sigma2_h_rm = torch.var(measurements, 1)                                                                    # [Rm]
         self.rho_h_rh = [torch.ones([self.n_rh[rh]], device=self.device, dtype=torch.float64) for rh in range(self.Rh)]  # [Rh][n_rh]
 
         self._tpd = torch.zeros((D, K), device=self.device, dtype=torch.int64)              # [D, K]
@@ -70,6 +71,7 @@ class MCLDA(LDABase):
         self._wt_rt = [None for _ in range(self.Rt)]                                        # [Rt][K]
         self._mean_rm = torch.zeros((self.Rm, K), device=self.device, dtype=torch.float64)  # [Rm, K]
         self._std_rm = torch.zeros((self.Rm, K), device=self.device, dtype=torch.float64)   # [Rm, K]
+        self._xt_rm = torch.zeros((self.Rm, K), device=self.device, dtype=torch.int64)      # [Rm, K]
         self._xpt_rh = [None for _ in range(self.Rh)]                                       # [Rh][K, n_rh]
         self._xt_rh = [None for _ in range(self.Rh)]                                        # [Rh][K]
 
@@ -112,6 +114,7 @@ class MCLDA(LDABase):
             for k in range(K):
                 self._mean_rm[rm, k] = torch.mean(self.x_rm[rm][self.z_rm[rm] == k])
                 self._std_rm[rm, k] = torch.std(self.x_rm[rm][self.z_rm[rm] == k])
+                self._xt_rm[rm, k] = torch.sum(self.z_rm[rm] == k)
         self.z_rh = torch.randint(0, K, [self.Rh, D], device=self.device, dtype=torch.int64)
         for rh in range(self.Rh):
             self._tpd.index_put_([idx, self.z_rh[rh]], ones, accumulate=True)
@@ -250,12 +253,33 @@ class MCLDA(LDABase):
         for k in range(self.K):
             self._mean_rm[rm, k] = torch.mean(self.x_rm[rm][self.z_rm[rm] == k])
             self._std_rm[rm, k] = torch.std(self.x_rm[rm][self.z_rm[rm] == k])
+            self._xt_rm[rm, k] = torch.sum(self.z_rm[rm] == k)
+
+        """
+        例外的な状況の処理について
+        self._xt_rm[rm,k] == 0 のとき  (self._mean_rm[rm,k] == nan, self._std_rm[rm,k] == nan):
+            self._mean_rm[rm,k] = self.mu_h_rm[rm,k], self._std_rm[rm,k] = 0 とする
+            (_get_z_rm_sampling_probs()で対応)
+        self._xt_rm[rm,k] == 1 の場合  (self._std_rm[rm,k] == nan):
+            事前分布設定で解決?
+        z=kのxがすべて一定の場合        (self._std_rm[rm,k] == 0):
+            事前分布設定で解決
+        """
+        self._std_rm[rm][torch.isnan(self._std_rm[rm])] = 0
 
 
     def _get_z_rm_sampling_probs(self, rm, idx):
         """
         本来_mean_rmと_std_rmは自分の影響を除いて計算するべきだけど，近似的にかわらないとした
+
+        事後分布の平均は，事後分布の分散が既知(=self._std_rm[rm, k])として求め，
+        事後分布の分散は，事後分布の平均が既知(=self._mean_rm[rm, k])として求めた．
+        事前分布：
+        mean ~ Normal(self.mu_h_rm[rm, k], self._std_rm[rm, k])
+        var ~ Scaled-inv-chi-squared(self.mu_h_rm[rm, k], self.sigma2_h_rm[rm, k])
+        本来は事後分布の平均も分散も未知として，事後分布の平均と分散を同時に推定するべき
         """
+
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)                    # [subsample_size, K]
         a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)                       # [subsample_size, K]
@@ -264,7 +288,14 @@ class MCLDA(LDABase):
 
         probs *= self._tpd[idx, :] + self.alpha[None, :] - a
         probs /= self._nd[idx][:, None] + self.alpha.sum() - a
-        probs *= dist.Normal(self._mean_rm[rm], self._std_rm[rm]).log_prob(x).exp()
+
+        # probs *= dist.Normal(self._mean_rm[rm], self._std_rm[rm]).log_prob(x).exp()
+        std2 = self._std_rm[rm] ** 2
+        mean = self._xt_rm[rm] * self.sigma2_h_rm[rm] * self._mean_rm[rm] + std2 * self.mu_h_rm[rm]  # [K]
+        mean /= self._xt_rm[rm] * self.sigma2_h_rm[rm] + std2
+        mean[torch.isnan(mean)] = self.mu_h_rm[rm]
+        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * std2) / (self.nu_h_rm + self._xt_rm[rm] - 2)  # [K]
+        probs *= dist.Normal(mean, var).log_prob(x).exp()
 
         """ calculation checking """
         # for i in range(100):
@@ -363,7 +394,10 @@ class MCLDA(LDABase):
 
 
     def mu(self, rm, to_cpu=True):
-        mu = self._mean_rm[rm]
+        # mu = self._mean_rm[rm]
+        mu = self._xt_rm[rm] * self.sigma2_h_rm[rm] * self._mean_rm[rm] + (self._std_rm[rm] ** 2) * self.mu_h_rm[rm]
+        mu /= self._xt_rm[rm] * self.sigma2_h_rm[rm] + self._std_rm[rm] ** 2
+        mu[torch.isnan(mu)] = self.mu_h_rm[rm]
         if(to_cpu):
             return mu.cpu().detach().numpy().copy()
         else:
@@ -371,7 +405,9 @@ class MCLDA(LDABase):
 
 
     def sigma(self, rm, to_cpu=True):
-        sigma = self._std_rm[rm]
+        # sigma = self._std_rm[rm]
+        var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm] - 2)
+        sigma = torch.pow(var, 0.5)
         if(to_cpu):
             return sigma.cpu().detach().numpy().copy()
         else:
@@ -448,16 +484,16 @@ class MCLDA(LDABase):
         return self.model_infer.calc_mean_accuracy(masked_records)
 
 
-    def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions):
+    def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions, max_iter=100):
         mean_accuracy = _mask_validate({})
         for rt in range(self.Rt):
-            a = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions)
+            a = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter)
             mean_accuracy["rt"].append(a["rt"][0])
         for rm in range(self.Rm):
-            a = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions)
+            a = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter)
             mean_accuracy["rm"].append(a["rm"][0])
         for rh in range(self.Rh):
-            a = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions)
+            a = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter)
             mean_accuracy["rh"].append(a["rh"][0])
         return mean_accuracy
 
@@ -492,6 +528,24 @@ class MCLDA(LDABase):
                 args_dict_str[k] = str(args_dict_str[k])
         ws = wb.create_sheet("args")
         writeVector(ws, list(args_dict_str.values()), axis="row", names=list(args_dict_str.keys()))
+
+        ws = wb.create_sheet("num latent topics")
+        writeMatrix(ws, [[self._wt_rt[r][k].item() for k in range(self.K)] for r in range(self.Rt)],
+                    1, 1,
+                    row_names=summary_args.full_tensors["tensor_keys"],
+                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    addDataBar=True)
+        writeMatrix(ws, [[self._xt_rm[r][k].item() for k in range(self.K)] for r in range(self.Rm)],
+                    self.Rt + 3, 1,
+                    row_names=summary_args.full_tensors["measurement_keys"],
+                    addDataBar=True)
+        writeMatrix(ws, [[self._xt_rh[r][k].item() for k in range(self.K)] for r in range(self.Rh)],
+                    self.Rt + self.Rm + 4, 1,
+                    row_names=summary_args.full_tensors["habit_keys"],
+                    addDataBar=True)
+        writeVector(ws, [torch.sum(self._tpd[:, k]).item() for k in range(self.K)],
+                    self.Rt + self.Rm + self.Rh + 5, 2,
+                    addDataBar=True)
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,

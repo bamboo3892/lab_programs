@@ -22,7 +22,14 @@ DEVICE = torch.device("cuda:0")
 # x = torch.randn([5, 2])
 # a = dist.Normal(m, s).log_prob(x).exp()
 
-b = torch.zeros((3), device=DEVICE)
-torch.save(b, "model.pickle")
+# b = torch.zeros((3), device=DEVICE)
+# torch.save(b, "model.pickle")
+
+b = torch.tensor([0.4, float('nan'), -1], device=DEVICE)
+# if(torch.any(torch.isnan(b))):
+#     print("nan")
+# if(torch.any(b <= 0)):
+#     print("negative")
+a = dist.Categorical(b).sample()
 
 print("aaaaaa")
