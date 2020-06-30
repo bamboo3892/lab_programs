@@ -77,8 +77,8 @@ if __name__ == '__main__':
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
-    b25 = True  # excute MCLDA (torch)
-    b26 = False  # excute MCLDA for each K (torch)
+    b25 = False  # excute MCLDA (torch)
+    b26 = True  # excute MCLDA for each K (torch)
 
     b11 = False  # HC statistics
 

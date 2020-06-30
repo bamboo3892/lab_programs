@@ -61,7 +61,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 100
+    args.num_steps = 1
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -71,6 +71,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.auto_alpha = False
     args.coef_beta = 1
     args.coef_alpha = 1
+    args.nu_h = 1
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
@@ -78,8 +79,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    # _excute(model_class, args, data, pathResult, summary_args, testset=testset)
-    _excute(model_class, args, data, pathResult, summary_args)
+    _excute(model_class, args, data, pathResult, summary_args, testset=testset)
+    # _excute(model_class, args, data, pathResult, summary_args)
 
 
 def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
@@ -95,7 +96,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 100
+    args.num_steps = 200
     args.step_subsample = 10
     # args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -104,15 +105,18 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     args.auto_alpha = False
     args.coef_beta = 1
     args.coef_alpha = 1
+    args.nu_h = 1
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
 
-    Ks = np.arange(1, 100, 10)
+    Ks = [1] + np.arange(10, 101, 10).tolist()
     for K in Ks:
         args.K = K
         print(f"D: {args.D}, K: {args.K}")
-        _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args, testset=testset)
+        # _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args, testset=testset)
+        _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args,
+                testset=testset, from_pickle=True)
 
     accuracies_rt = []
     accuracies_rm = []
@@ -183,33 +187,36 @@ def _make_data_1(pathDocs, pathTensors):
 
 
 def _excute(modelClass, args, data, pathResult, summary_args,
-            testset=None):
+            testset=None, from_pickle=False):
 
-    print(f"Model: {args.modelType}  (to {pathResult})")
-
-    pathResult.mkdir(exist_ok=True, parents=True)
+    print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle})")
 
     args.device = DEVICE
     summary_args.summary_path = pathResult
 
-    model = modelClass(args, data)
-    losses = []
-    for n in range(args.num_steps):
-        probability = model.step(args.step_subsample)
-        losses.append(probability)
-        if((n + 1) % 10 == 0):
-            print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
+    if(from_pickle):
+        model = torch.load(pathResult.joinpath("model.pickle"), args.device)
+    else:
+        model = modelClass(args, data)
+        losses = []
+        for n in range(args.num_steps):
+            probability = model.step(args.step_subsample)
+            losses.append(probability)
+            if((n + 1) % 10 == 0):
+                print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
 
-    plt.plot(losses)
-    plt.savefig(pathResult.joinpath("probability.png"))
-    plt.clf()
-    torch.save(model, pathResult.joinpath("model.pickle"))
-    model.summary(summary_args)
+        pathResult.mkdir(exist_ok=True, parents=True)
+        plt.plot(losses)
+        plt.savefig(pathResult.joinpath("probability.png"))
+        plt.clf()
+        torch.save(model, pathResult.joinpath("model.pickle"))
+        model.summary(summary_args)
 
     if(testset is not None):
+        print("calcurating accuracy")
         model.set_testset(testset)
-        # accuracy = model.calc_all_mean_accuracy_from_testset(args.step_subsample)
-        accuracy = model.calc_mean_accuracy_from_testset({"rt": [0]}, args.step_subsample, max_iter=5)
+        accuracy = model.calc_all_mean_accuracy_from_testset(args.step_subsample)
+        # accuracy = model.calc_mean_accuracy_from_testset({"rt": [0]}, args.step_subsample, max_iter=5)
 
         with open(str(pathResult.joinpath("accuracy.json")), "w", encoding="utf_8_sig") as output:
             text = json.dumps(accuracy, ensure_ascii=False, indent=4)

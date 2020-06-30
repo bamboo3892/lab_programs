@@ -10,17 +10,19 @@ class MCLDA_infer:
     testsetに対するaccuracyを評価するためにも使用する
     """
 
-    def __init__(self, mclda_obj, data, masked_records):
+    def __init__(self, mclda_obj, data, masked_records, mask_ratio=0.2):
         """
         mclda_obj:      予測に使うMCLDAオブジェクト
         data:           未知のデータセット，リストの形式や大きさはmclda_objの作成時に渡したdataと全く同じ
                         masked_recordsで指定された記録は欠損値扱いとなり，その記録の数値は完全に無視される
         masked_records: {"rt": [masked_record_id, ...], "rm": [...], "rh": [...]}
+        mask_ratio:     テキストのaccuracyを計算するときに使う．なん%の単語をマスキングするか
         """
 
         self.M = mclda_obj
         self.device = self.M.device
         self.mask = _mask_validate(masked_records)
+        self.mask_ratio = mask_ratio
 
         docs = data[0]
         measurements = torch.tensor(data[1], device=self.device, dtype=torch.float64)  # [Rm, D]
@@ -31,11 +33,15 @@ class MCLDA_infer:
         self.totalN_rt = [0 for _ in range(self.M.Rt)]                                       # [Rt]
         self.wordids_rt = [[] for _ in range(self.M.Rt)]                                     # [Rt][totalN_rt]
         self.docids_rt = [[] for _ in range(self.M.Rt)]                                      # [Rt][totalN_rt]
-        self.x_rm = measurements                                                           # [Rm, D]
-        self.x_rh = habits                                                                 # [Rh, D]
+        self.masked_idx = [None for _ in range(self.M.Rt)]                                   # [Rt][totalN_rt]
+        # self.masked_totalN_rt = [None for _ in range(self.M.Rt)]                             # [Rt]
+        # self.masked_wordids_rt = [None for _ in range(self.M.Rt)]                            # [Rt][totalN_rt]
+        # self.masked_docids_rt = [None for _ in range(self.M.Rt)]                             # [Rt][totalN_rt]
+        self.x_rm = measurements                                                             # [Rm, D]
+        self.x_rh = habits                                                                   # [Rh, D]
         self.z_rt = [None for _ in range(self.M.Rt)]                                         # [Rt][totalN_rt]
-        self.z_rm = torch.full([self.M.Rm, D], -1, device=self.device, dtype=torch.int64)  # [Rm, D]
-        self.z_rh = torch.full([self.M.Rh, D], -1, device=self.device, dtype=torch.int64)  # [Rh, D]
+        self.z_rm = torch.full([self.M.Rm, D], -1, device=self.device, dtype=torch.int64)    # [Rm, D]
+        self.z_rh = torch.full([self.M.Rh, D], -1, device=self.device, dtype=torch.int64)    # [Rh, D]
 
         self.alpha = torch.full([self.M.K], self.M.args.coef_alpha, device=self.device, dtype=torch.float64)
 
@@ -54,26 +60,38 @@ class MCLDA_infer:
             self.wordids_rt[rt] = torch.tensor(self.wordids_rt[rt], device=self.device, dtype=torch.int64)
             self.docids_rt[rt] = torch.tensor(self.docids_rt[rt], device=self.device, dtype=torch.int64)
 
-        self.change_mask(self.mask)
-
-        pass
+        self.change_mask(self.mask, mask_ratio=mask_ratio)
 
 
-    def change_mask(self, mask):
+    def change_mask(self, mask, mask_ratio=0.2):
         """
         change mask and reset latent variables
         """
 
+        self.totalN_rt = [len(self.wordids_rt[rt]) for rt in range(self.M.Rt)]
         self.mask = _mask_validate(mask)
-        self.z_rt = [None for _ in range(self.M.Rt)]                                         # [Rt][totalN_rt]
+        self.mask_ratio = mask_ratio
+        self.masked_idx = [None for _ in range(self.M.Rt)]
+        self.z_rt = [None for _ in range(self.M.Rt)]                                            # [Rt][totalN_rt]
         self.z_rm = torch.full([self.M.Rm, self.D], -1, device=self.device, dtype=torch.int64)  # [Rm, D]
         self.z_rh = torch.full([self.M.Rh, self.D], -1, device=self.device, dtype=torch.int64)  # [Rh, D]
 
+        self._tpd = torch.zeros((self.D, self.M.K), device=self.device, dtype=torch.int64)  # [D, K]
+        self._nd = torch.zeros(self.D, device=self.device, dtype=torch.int64)               # [D]
+
         for rt in range(self.M.Rt):
+            ones = torch.ones(self.totalN_rt[rt], device=self.device, dtype=torch.int64)
             if(rt not in self.mask["rt"]):
                 self.z_rt[rt] = torch.randint(0, self.M.K, (self.totalN_rt[rt],), device=self.device, dtype=torch.int64)
-                ones = torch.ones(self.totalN_rt[rt], device=self.device, dtype=torch.int64)
                 self._tpd.index_put_([self.docids_rt[rt], self.z_rt[rt]], ones, accumulate=True)
+            else:
+                self.z_rt[rt] = torch.randint(0, self.M.K, (self.totalN_rt[rt],), device=self.device, dtype=torch.int64)
+                self.masked_idx[rt] = torch.bernoulli(torch.full([self.totalN_rt[rt]], self.mask_ratio)) == 1.
+                self.totalN_rt[rt] = len(self.wordids_rt[rt]) - torch.sum(self.masked_idx[rt]).item()
+                self.z_rt[rt][self.masked_idx[rt]] = -1
+                inv = torch.logical_not(self.masked_idx[rt])
+                self._tpd.index_put_([self.docids_rt[rt][inv], self.z_rt[rt][inv]], ones[inv], accumulate=True)
+
         ones = torch.ones(self.D, device=self.device, dtype=torch.int64)
         idx = torch.arange(0, self.D, device=self.device, dtype=torch.int64)
         for rm in range(self.M.Rm):
@@ -97,8 +115,7 @@ class MCLDA_infer:
         rand_perm_rm = [None for _ in range(self.M.Rm)]
         rand_perm_rh = [None for _ in range(self.M.Rh)]
         for rt in range(self.M.Rt):
-            if rt not in self.mask["rt"]:
-                rand_perm_rt[rt] = torch.randperm(self.totalN_rt[rt], device=self.device)
+            rand_perm_rt[rt] = torch.randperm(self.totalN_rt[rt], device=self.device)
         for rm in range(self.M.Rm):
             if rm not in self.mask["rm"]:
                 rand_perm_rm[rm] = torch.randperm(self.D, device=self.device)
@@ -110,11 +127,13 @@ class MCLDA_infer:
         for n in range(num_subsample_partitions):
             # texts
             for rt in range(self.M.Rt):
-                if rt not in self.mask["rt"]:
-                    s = (self.totalN_rt[rt] // num_subsample_partitions + 1) * n
-                    e = (self.totalN_rt[rt] // num_subsample_partitions + 1) * (n + 1) - 1
-                    e = e if e < self.totalN_rt[rt] else self.totalN_rt[rt] - 1
-                    self._sampling_rt(rt, rand_perm_rt[rt][s:e])
+                s = (self.totalN_rt[rt] // num_subsample_partitions + 1) * n
+                e = (self.totalN_rt[rt] // num_subsample_partitions + 1) * (n + 1) - 1
+                e = e if e < self.totalN_rt[rt] else self.totalN_rt[rt] - 1
+                idx = rand_perm_rt[rt][s:e]
+                if rt in self.mask["rt"]:
+                    idx = idx[torch.logical_not(self.masked_idx[rt][idx])]
+                self._sampling_rt(rt, idx)
             # measurements
             for rm in range(self.M.Rm):
                 if rm not in self.mask["rm"]:
@@ -293,33 +312,37 @@ class MCLDA_infer:
 
 
     def log_probability(self):
-        return self._log_prob(self.mask)
-
-
-    def _log_prob(self, mask={}):
-        mask = _mask_validate(mask)
 
         p = 0.
         theta = self.theta(to_cpu=False)
         idx = torch.arange(0, self.D, device=self.device, dtype=torch.int64)
         for rt in range(self.M.Rt):
-            if rt not in mask["rt"]:
+            if rt not in self.mask["rt"]:
                 p += self._log_prob_rt(rt, theta)
+            elif rt in self.mask["rt"]:
+                p += self._log_prob_rt(rt, theta, torch.logical_not(self.masked_idx[rt]))
         for rm in range(self.M.Rm):
-            if rm not in mask["rm"]:
+            if rm not in self.mask["rm"]:
                 p += self._log_prob_rm(rm, theta, idx)
         for rh in range(self.M.Rh):
-            if rh not in mask["rh"]:
+            if rh not in self.mask["rh"]:
                 p += self._log_prob_rh(rh, theta, idx)
         return p
 
 
-    def _log_prob_rt(self, rt, theta, mean=False):
+    def _log_prob_rt(self, rt, theta, idx=None, mean=False):
         dv = torch.mm(theta, self.M.phi(rt, to_cpu=False))
-        if(not mean):
-            return dv[self.docids_rt[rt], self.wordids_rt[rt]].log().sum().item()
+        if(idx is None):
+            if(not mean):
+                return dv[self.docids_rt[rt], self.wordids_rt[rt]].log().sum().item()
+            else:
+                return dv[self.docids_rt[rt], self.wordids_rt[rt]].mean().item()
         else:
-            return dv[self.docids_rt[rt], self.wordids_rt[rt]].mean().item()
+            if(not mean):
+                return dv[self.docids_rt[rt], self.wordids_rt[rt]][idx].log().sum().item()
+            else:
+                return dv[self.docids_rt[rt], self.wordids_rt[rt]][idx].mean().item()
+
 
 
     def _log_prob_rm(self, rm, theta, idx, mean=False):
@@ -350,29 +373,24 @@ class MCLDA_infer:
             return theta
 
 
-    def calc_mean_accuracy(self, test_records):
+    def calc_mean_accuracy(self):
         """
-        平均正解率を計算
+        マスクされたデータの平均正解率を計算
         テストするデータはこのクラスを作成したときに渡したものをそのまま使う
-        Parameters
-        ----------
-        test_records: {"rt": [masked_record_id, ...], "rm": [...], "rh": [...]}
-                      基本的にはtest_records in masked_recordsとして使う
         Return
         ------
         mean_accuracy: {"rt": [mean_accuracy, ...], "rm": [...], "rh": [...]}
                        the same shape of test_records argument
         """
-        test_records = _mask_validate(test_records)
         accuracy = _mask_validate({})
 
         theta = self.theta(to_cpu=False)
         idx = torch.arange(0, self.D, device=self.device, dtype=torch.int64)
-        for rt in test_records["rt"]:
-            accuracy["rt"].append(self._log_prob_rt(rt, theta, mean=True))
-        for rm in test_records["rm"]:
+        for rt in self.mask["rt"]:
+            accuracy["rt"].append(self._log_prob_rt(rt, theta, self.masked_idx[rt], mean=True))
+        for rm in self.mask["rm"]:
             accuracy["rm"].append(self._log_prob_rm(rm, theta, idx, mean=True))
-        for rh in test_records["rh"]:
+        for rh in self.mask["rh"]:
             accuracy["rh"].append(self._log_prob_rh(rh, theta, idx, mean=True))
 
         return accuracy

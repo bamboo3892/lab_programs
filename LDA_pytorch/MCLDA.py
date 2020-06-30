@@ -22,6 +22,7 @@ class MCLDA(LDABase):
             n_rh,  # number of categories for record "rh"
             auto_beta, auto_alpha,
             coef_beta, coef_alpha,
+            nu_h,
             device
 
         data : object
@@ -61,8 +62,7 @@ class MCLDA(LDABase):
         self.alpha = torch.full([K], args.coef_alpha, device=self.device, dtype=torch.float64)                           # [K]
         self.beta_rt = [None for _ in range(self.Rt)]                                                                    # [Rt][V_rt]
         self.mu_h_rm = torch.mean(measurements, 1)                                                                       # [Rm]
-        # self.nu_h_rm = torch.tensor(3, device=self.device, dtype=torch.float64)                                          #
-        self.nu_h_rm = torch.tensor(0.01, device=self.device, dtype=torch.float64)                                          #
+        self.nu_h_rm = torch.tensor(args.nu_h, device=self.device, dtype=torch.float64)
         self.sigma2_h_rm = torch.var(measurements, 1)                                                                    # [Rm]
         self.rho_h_rh = [torch.ones([self.n_rh[rh]], device=self.device, dtype=torch.float64) for rh in range(self.Rh)]  # [Rh][n_rh]
 
@@ -487,7 +487,7 @@ class MCLDA(LDABase):
             if(n >= 5 and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
                 break
 
-        return self.model_infer.calc_mean_accuracy(masked_records)
+        return self.model_infer.calc_mean_accuracy()
 
 
     def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions, max_iter=100):
