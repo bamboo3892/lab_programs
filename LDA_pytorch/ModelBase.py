@@ -31,7 +31,7 @@ class LDABase(metaclass=ABCMeta):
         # torch.save(self, summary_args.summary_path.joinpath("model.pickle"))
 
         self._summary_print(summary_args)
-        self._sammary_wordcloud(summary_args)
+        self._sammary_figs(summary_args)
 
         # result.xlsx
         wb = openpyxl.Workbook()
@@ -45,7 +45,7 @@ class LDABase(metaclass=ABCMeta):
         pass
 
 
-    def _sammary_wordcloud(self, summary_args):
+    def _sammary_figs(self, summary_args):
         pass
 
 

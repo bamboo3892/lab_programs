@@ -230,7 +230,7 @@ class LDA(LDABase):
             print(msg)
 
 
-    def _sammary_wordcloud(self, summary_args):
+    def _sammary_figs(self, summary_args):
 
         p = summary_args.summary_path.joinpath("wordcloud")
         p.mkdir(exist_ok=True, parents=True)

@@ -61,7 +61,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
-    args.num_steps = 1
+    args.num_steps = 200
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -79,7 +79,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    _excute(model_class, args, data, pathResult, summary_args, testset=testset)
+    _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False)
     # _excute(model_class, args, data, pathResult, summary_args)
 
 
@@ -110,13 +110,14 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
 
-    Ks = [1] + np.arange(10, 101, 10).tolist()
+    # Ks = [1] + np.arange(10, 101, 10).tolist()
+    Ks = np.arange(1, 21, 1).tolist()
     for K in Ks:
         args.K = K
         print(f"D: {args.D}, K: {args.K}")
         # _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args, testset=testset)
         _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args,
-                testset=testset, from_pickle=True)
+                testset=testset, from_pickle=False)
 
     accuracies_rt = []
     accuracies_rm = []
@@ -210,7 +211,7 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         plt.savefig(pathResult.joinpath("probability.png"))
         plt.clf()
         torch.save(model, pathResult.joinpath("model.pickle"))
-        model.summary(summary_args)
+    model.summary(summary_args)
 
     if(testset is not None):
         print("calcurating accuracy")

@@ -1,9 +1,12 @@
 import random
 import pickle
 import numpy as np
+import scipy
 import torch
 import pyro.distributions as dist
 import openpyxl
+from sklearn import manifold
+import matplotlib.pyplot as plt
 
 from LDA_pytorch.ModelBase import LDABase
 from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
@@ -512,8 +515,48 @@ class MCLDA(LDABase):
         pass
 
 
-    def _sammary_wordcloud(self, summary_args):
-        pass
+    def _sammary_figs(self, summary_args):
+        theta = self.theta().T
+        theta = (theta - theta.mean(axis=1)[:, None]) / theta.std(axis=1)[:, None]
+
+        cor = np.corrcoef(theta)
+        cos = np.zeros((self.K, self.K))
+        norm = np.linalg.norm(theta, ord=2, axis=1)
+        for k in range(self.K):
+            cos[k, :] = np.dot(theta, theta[k]) / norm / norm[k]
+
+        p = summary_args.summary_path.joinpath("figs")
+        p.mkdir(exist_ok=True, parents=True)
+
+        mds = manifold.MDS(n_components=2, metric=True, dissimilarity="precomputed", random_state=6)
+        pos = mds.fit_transform(cor)
+        plt.scatter(pos[:, 0], pos[:, 1])
+        for k in range(self.K):
+            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        plt.savefig(p.joinpath("mds_metric_cor_.png"))
+        plt.clf()
+
+        pos = mds.fit_transform(cos)
+        plt.scatter(pos[:, 0], pos[:, 1])
+        for k in range(self.K):
+            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        plt.savefig(p.joinpath("mds_metric_cos.png"))
+        plt.clf()
+
+        mds = manifold.MDS(n_components=2, metric=False, dissimilarity="precomputed", random_state=6)
+        pos = mds.fit_transform(cor)
+        plt.scatter(pos[:, 0], pos[:, 1])
+        for k in range(self.K):
+            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        plt.savefig(p.joinpath("mds_nonmetric_cor.png"))
+        plt.clf()
+
+        pos = mds.fit_transform(cos)
+        plt.scatter(pos[:, 0], pos[:, 1])
+        for k in range(self.K):
+            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        plt.savefig(p.joinpath("mds_nonmetric_cos.png"))
+        plt.clf()
 
 
     def _summary_to_excel(self, summary_args, wb):
@@ -615,9 +658,9 @@ class MCLDA(LDABase):
         tmp_ws = wb[wb.get_sheet_names()[0]]
 
         for k in range(self.K):
-            ws = wb.create_sheet(f"topic_{k}")
+            ws = wb.create_sheet(f"topic_{k+1}")
             for r in range(self.Rt):
-                ws.cell(1, r + 1, f"r{r}")
+                ws.cell(1, r + 1, summary_args.full_tensors["tensor_keys"][r])
                 idx = np.argsort(phi[r][k])[::-1]
                 dat = np.array(self.word_dict_rt[r])[idx].tolist()
                 writeVector(ws, dat, 2, r + 1, axis="row", names=None)
