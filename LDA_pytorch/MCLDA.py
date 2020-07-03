@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from LDA_pytorch.ModelBase import LDABase
 from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
-from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
+from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix, addBorderToMaxCell
 from utils.wordcloud_util import create_wordcloud
 
 
@@ -583,28 +583,29 @@ class MCLDA(LDABase):
                     1, 1,
                     row_names=summary_args.full_tensors["tensor_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True)
+                    rule="databar")
         writeMatrix(ws, [[self._xt_rm[r][k].item() for k in range(self.K)] for r in range(self.Rm)],
                     self.Rt + 3, 1,
                     row_names=summary_args.full_tensors["measurement_keys"],
-                    addDataBar=True)
+                    rule="databar")
         writeMatrix(ws, [[self._xt_rh[r][k].item() for k in range(self.K)] for r in range(self.Rh)],
                     self.Rt + self.Rm + 4, 1,
                     row_names=summary_args.full_tensors["habit_keys"],
-                    addDataBar=True)
+                    rule="databar")
         writeVector(ws, [torch.sum(self._tpd[:, k]).item() for k in range(self.K)],
                     self.Rt + self.Rm + self.Rh + 5, 2,
-                    addDataBar=True)
+                    rule="databar")
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,
                     row_names=summary_args.full_tensors["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True, dataBarAxis="column")
+                    rule="colorscale", ruleAxis="column")
+        addBorderToMaxCell(ws, 2, self.Rm + 1, 2, self.K + 1, axis="column")
         writeMatrix(ws, sigma, 1, self.K + 3,
                     row_names=summary_args.full_tensors["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True, dataBarAxis="column")
+                    rule="colorscale", ruleAxis="column")
 
         ws = wb.create_sheet("rho")
         row = 1
@@ -613,36 +614,42 @@ class MCLDA(LDABase):
             writeMatrix(ws, rho[r].T, row, 1,
                         row_names=summary_args.full_tensors["habit_levels"][r],
                         column_names=[f"topic{k+1}" for k in range(self.K)],
-                        addDataBar=True, dataBarBoundary=[0., 1.])
+                        rule="databar", ruleBoundary=[0., 1.])
             _, counts = torch.unique(self.x_rh[r], return_counts=True)
             counts = counts.cpu().detach().numpy()
             counts = counts / np.sum(counts)
             writeMatrix(ws, counts[:, None], row, self.K + 3, column_names=["data distribution"],
-                        addDataBar=True, dataBarBoundary=[0., 1.])
+                        rule="databar", ruleBoundary=[0., 1.])
             row += self.n_rh[r] + 2
+        row += 1
+        for r in range(self.Rh):
+            wl = summary_args.habitWorstLevels[r]
+            ws.cell(row + r, 1, f'{summary_args.full_tensors["habit_keys"][r]} -> {summary_args.full_tensors["habit_levels"][r][wl]}')
+            writeVector(ws, rho[r][:, wl], row + r, 2, axis="column", rule="colorscale")
+        addBorderToMaxCell(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
 
         ws = wb.create_sheet("alpha_hyper")
         writeVector(ws, alpha, axis="row", names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True)
+                    rule="databar")
 
         ws = wb.create_sheet("beta_hyper")
         for r in range(self.Rt):
             writeVector(ws, beta[r], column=r * 3 + 1,
                         axis="row", names=self.word_dict_rt[r],
-                        addDataBar=True)
+                        rule="databar")
 
         ws = wb.create_sheet("theta")
         writeMatrix(ws, theta, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(self.D)],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
-                    addDataBar=True, dataBarBoundary=[0., 1.])
+                    rule="databar", ruleBoundary=[0., 1.])
 
         for r in range(self.Rt):
             ws = wb.create_sheet(f"phi_r{r}")
             writeMatrix(ws, phi[r].T, 1, 1,
                         row_names=self.word_dict_rt[r],
                         column_names=[f"topic{k+1}" for k in range(self.K)],
-                        addDataBar=True)
+                        rule="databar")
 
             ws = wb.create_sheet(f"phi_r{r}_sorted")
             writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=1,
@@ -651,7 +658,7 @@ class MCLDA(LDABase):
             writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=self.K + 3,
                               row_names=None, column_names=[f"topic{k+1}" for k in range(self.K)],
                               maxwrite=100, order="higher",
-                              addDataBar=True)
+                              rule="databar")
 
         # topics file
         wb = openpyxl.Workbook()

@@ -1,22 +1,43 @@
 import numpy as np
 import openpyxl
-from openpyxl.styles import Font, Color
-from openpyxl.formatting.rule import ColorScale, DataBar, FormatObject, Rule, DataBarRule
+from openpyxl.styles import Font, Color, Border, Side
+from openpyxl.formatting.rule import ColorScale, DataBar, FormatObject, Rule, DataBarRule, ColorScaleRule
 from openpyxl.utils.cell import get_column_letter
+
+
+FULL_BORDER = Border(
+    left=Side(
+        border_style="thin",
+        color="000000"
+    ),
+    right=Side(
+        border_style="thin",
+        color="000000"
+    ),
+    top=Side(
+        border_style="thin",
+        color="000000"
+    ),
+    bottom=Side(
+        border_style="thin",
+        color="000000"
+
+    )
+)
 
 
 def writeVector(ws, vector, row=1, column=1, axis="column", names=None,
                 matrix_font=None,
                 name_font=Font(color="006400"),
-                addDataBar=False, dataBarBoundary=None):
+                rule=None, ruleBoundary=None):
     if(axis == "column"):
         writeMatrix(ws, [vector], row=row, column=column, column_names=names,
                     matrix_font=matrix_font, column_name_font=name_font,
-                    addDataBar=addDataBar, dataBarBoundary=dataBarBoundary)
+                    rule=rule, ruleBoundary=ruleBoundary)
     elif(axis == "row"):
         writeMatrix(ws, [[a] for a in vector], row=row, column=column, row_names=names,
                     matrix_font=matrix_font, row_name_font=name_font,
-                    addDataBar=addDataBar, dataBarBoundary=dataBarBoundary)
+                    rule=rule, ruleBoundary=ruleBoundary)
     else:
         raise Exception("irregal parameter")
 
@@ -25,7 +46,7 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
                 matrix_font=None,
                 row_name_font=Font(color="006400"),
                 column_name_font=Font(color="006400"),
-                addDataBar=False, dataBarBoundary=None, dataBarAxis=None):
+                rule=None, ruleBoundary=None, ruleAxis=None):
 
     offset_row = row if column_names is None else row + 1
     offset_column = column if row_names is None else column + 1
@@ -45,16 +66,19 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
         for j in range(len(vec)):
             ws.cell(offset_row + i, offset_column + j, vec[j]).font = matrix_font
 
-    if(addDataBar):
+    if(rule == "databar"):
         addDataBarRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength,
-                        boundary=dataBarBoundary, axis=dataBarAxis)
+                        boundary=ruleBoundary, axis=ruleAxis)
+    elif(rule == "colorscale"):
+        addColorScaleRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength,
+                           boundary=ruleBoundary, axis=ruleAxis)
 
 
 def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, column_names=None,
                       maxwrite=None, order="higher",
                       matrix_font=None,
                       name_font=Font(color="006400"),
-                      addDataBar=False, dataBarBoundary=None, dataBarAxis=None):
+                      rule=None, ruleBoundary=None, ruleAxis=None):
     """
     names is none: write sorted matrix values
     names is not none: write sorted names
@@ -91,11 +115,11 @@ def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, colum
     if(axis == 0):
         writeMatrix(ws, data, row=row, column=column, column_names=column_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary, dataBarAxis=dataBarAxis)
+                    row_name_font=name_font, rule=rule, ruleBoundary=ruleBoundary, ruleAxis=ruleAxis)
     elif(axis == 1):
         writeMatrix(ws, data, row=row, column=column, row_names=row_names,
                     matrix_font=matrix_font,
-                    row_name_font=name_font, addDataBar=addDataBar, dataBarBoundary=dataBarBoundary, dataBarAxis=dataBarAxis)
+                    row_name_font=name_font, rule=rule, ruleBoundary=ruleBoundary, ruleAxis=ruleAxis)
 
 
 def addDataBarRules(ws, row1, row2, column1, column2, *,
@@ -117,13 +141,79 @@ def addDataBarRules(ws, row1, row2, column1, column2, *,
             addDataBarRules(ws, row1, row2, column, column, color=color, boundary=boundary, axis=None)
 
     area = getAreaLatter(row1, row2, column1, column2)
-    # data_bar = DataBar(cfvo=[FormatObject(type='min'), FormatObject(type='max')], color=color, showValue=None, minLength=0, maxLength=100)
-    # ws.conditional_formatting.add(area, Rule(type='dataBar', dataBar=data_bar))
     if(boundary is None):
         rule = DataBarRule(start_type="min", start_value=None, end_type="max", end_value=None, color=color, showValue=None, minLength=0, maxLength=100)
     else:
         rule = DataBarRule(start_type="num", start_value=boundary[0], end_type="num", end_value=boundary[1], color=color, showValue=None, minLength=0, maxLength=100)
     ws.conditional_formatting.add(area, rule)
+
+
+def addColorScaleRules(ws, row1, row2, column1, column2, *,
+                       colors=[Color('FFFFFF'), Color('008000')], boundary=None, axis=None):
+    if(row1 > row2):
+        a = row1
+        row1 = row2
+        row2 = a
+    if(column1 > column2):
+        a = column1
+        column1 = column2
+        column2 = a
+
+    if(axis == "column"):
+        for row in range(row1, row2 + 1):
+            addColorScaleRules(ws, row, row, column1, column2, colors=colors, boundary=boundary, axis=None)
+    elif(axis == "row"):
+        for column in range(column1, column2 + 1):
+            addColorScaleRules(ws, row1, row2, column, column, colors=colors, boundary=boundary, axis=None)
+
+    area = getAreaLatter(row1, row2, column1, column2)
+    if(boundary is None):
+        rule = ColorScaleRule(start_type="min", start_color=colors[0], end_type="max", end_color=colors[1])
+    else:
+        rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0], end_type="num", end_value=boundary[1], end_color=colors[1])
+    ws.conditional_formatting.add(area, rule)
+
+
+def addBorderToMaxCell(ws, row1, row2, column1, column2, *,
+                       border=FULL_BORDER, order="max", n=1, axis=None):
+    def func(cell):
+        cell.border = border
+    doFuncToMaxCell(ws, row1, row2, column1, column2, func, order=order, n=n, axis=axis)
+
+
+def doFuncToMaxCell(ws, row1, row2, column1, column2, func, *,
+                    order="max", n=1, axis=None):
+
+    if(row1 > row2):
+        a = row1
+        row1 = row2
+        row2 = a
+    if(column1 > column2):
+        a = column1
+        column1 = column2
+        column2 = a
+
+    if(axis == "column"):
+        for row in range(row1, row2 + 1):
+            doFuncToMaxCell(ws, row, row, column1, column2, func, order=order, n=n, axis=None)
+    elif(axis == "row"):
+        for column in range(column1, column2 + 1):
+            doFuncToMaxCell(ws, row1, row2, column, column, func, order=order, n=n, axis=None)
+
+    v = float("inf") if order == "min" else -float("inf")
+    row = []
+    column = []
+    for r in range(row1, row2 + 1):
+        for c in range(column1, column2 + 1):
+            if(ws.cell(r, c).value == v):
+                row.append(r)
+                column.append(c)
+            elif((order == "min" and ws.cell(r, c).value < v) or ws.cell(r, c).value > v):
+                v = ws.cell(r, c).value
+                row = [r]
+                column = [c]
+    for i in range(len(row)):
+        func(ws.cell(row[i], column[i]))
 
 
 def getAreaLatter(row1, row2, column1, column2):

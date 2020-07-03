@@ -5,14 +5,14 @@ import matplotlib.pyplot as plt
 import torch
 import openpyxl
 
-from analysis.analyzeHealthCheck import habitLevels2
+from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
 from utils.general_util import Args
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 
 
-seed = 123123
+seed = 0
 np.random.seed(seed)
 torch.manual_seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -29,6 +29,7 @@ def excuteLDA(pathDocs, pathResult, *,
 
     model_class = LDA.LDA
     args.modelType = "LDA"
+    args.random_seed = seed
     args.num_steps = 100
     args.step_subsample = 100000
     args.K = 7
@@ -61,26 +62,29 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
+    args.random_seed = seed
     args.num_steps = 200
     args.step_subsample = 10
-    args.K = 10
+    args.K = 6
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
     args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
     # args.n_rh = []
     args.auto_beta = False
     args.auto_alpha = False
     args.coef_beta = 1
-    args.coef_alpha = 1
+    args.coef_alpha = 0.1
     args.nu_h = 1
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
+    summary_args.full_tensors = tensors
+    summary_args.habitWorstLevels = habitWorstLevels2
     print(f"D: {args.D}, K: {args.K}")
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False)
-    # _excute(model_class, args, data, pathResult, summary_args)
+    # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=True)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False)
 
 
 def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
