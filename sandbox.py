@@ -25,11 +25,13 @@ DEVICE = torch.device("cuda:0")
 # b = torch.zeros((3), device=DEVICE)
 # torch.save(b, "model.pickle")
 
-b = torch.tensor([0.4, float('nan'), -1], device=DEVICE)
-# if(torch.any(torch.isnan(b))):
-#     print("nan")
-# if(torch.any(b <= 0)):
-#     print("negative")
-a = dist.Categorical(b).sample()
+# b = torch.tensor([0.4, float('nan'), -1], device=DEVICE)
+# # if(torch.any(torch.isnan(b))):
+# #     print("nan")
+# # if(torch.any(b <= 0)):
+# #     print("negative")
+# a = dist.Categorical(b).sample()
+
+a = float("")
 
 print("aaaaaa")

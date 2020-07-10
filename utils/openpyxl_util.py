@@ -168,7 +168,7 @@ def addColorScaleRules(ws, row1, row2, column1, column2, *,
 
     area = getAreaLatter(row1, row2, column1, column2)
     if(boundary is None):
-        rule = ColorScaleRule(start_type="min", start_color=colors[0], end_type="max", end_color=colors[1])
+        rule = ColorScaleRule(start_type="min", start_value=None, start_color=colors[0], end_type="max", end_value=None, end_color=colors[1])
     else:
         rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0], end_type="num", end_value=boundary[1], end_color=colors[1])
     ws.conditional_formatting.add(area, rule)
@@ -205,13 +205,14 @@ def doFuncToMaxCell(ws, row1, row2, column1, column2, func, *,
     column = []
     for r in range(row1, row2 + 1):
         for c in range(column1, column2 + 1):
-            if(ws.cell(r, c).value == v):
-                row.append(r)
-                column.append(c)
-            elif((order == "min" and ws.cell(r, c).value < v) or ws.cell(r, c).value > v):
-                v = ws.cell(r, c).value
-                row = [r]
-                column = [c]
+            if(isinstance(ws.cell(r, c).value, (int, float))):
+                if(ws.cell(r, c).value == v):
+                    row.append(r)
+                    column.append(c)
+                elif((order == "min" and ws.cell(r, c).value < v) or ws.cell(r, c).value > v):
+                    v = ws.cell(r, c).value
+                    row = [r]
+                    column = [c]
     for i in range(len(row)):
         func(ws.cell(row[i], column[i]))
 

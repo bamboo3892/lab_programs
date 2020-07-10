@@ -36,6 +36,7 @@ habitWorstLevels2 = [1, 1, 1, 2, 2, 2, 3, 3, 4, 2, 1]
 medicineLabels = ["服薬１（血圧）", "服薬２（血糖）", "服薬３（脂質）"]
 data_medicine_relation = [None, None, None, 1, 1, 0, 0, 2, 2, 2, None, None, None]
 medicineLevels = [["いいえ", "2.0"], ["いいえ", "2.0"], ["いいえ", "2.0"]]
+medicineWorstLevels = [1, 1, 1]
 
 habitLabels_jp_replaced = [f"h{i}" for i in range(len(habitLabels))]
 dataLabels_jp_replaced = [f"d{i}" for i in range(len(dataLabels))]

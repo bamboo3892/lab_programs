@@ -5,14 +5,14 @@ import matplotlib.pyplot as plt
 import torch
 import openpyxl
 
-from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2
+from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2, medicineLevels, medicineWorstLevels
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
 from utils.general_util import Args
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 
 
-seed = 0
+seed = 1
 np.random.seed(seed)
 torch.manual_seed(seed)
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -30,7 +30,7 @@ def excuteLDA(pathDocs, pathResult, *,
     model_class = LDA.LDA
     args.modelType = "LDA"
     args.random_seed = seed
-    args.num_steps = 100
+    args.num_steps = 200
     args.step_subsample = 100000
     args.K = 7
     args.auto_beta = False
@@ -55,36 +55,40 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args = args if args is not None else Args()
     summary_args = summary_args if summary_args is not None else Args()
 
-    documents, tensors, data = _make_data_1(pathDocs, pathTensors)
+    include_medicine = False
+    documents, tensors, data = _make_data_1(pathDocs, pathTensors, include_medicine=include_medicine)
     testset = None
     if(pathTestdocs is not None and pathTesttensors is not None):
-        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors)
+        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors, include_medicine=include_medicine)
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
     args.random_seed = seed
+    args.include_medicine = include_medicine
     args.num_steps = 200
     args.step_subsample = 10
-    args.K = 6
+    args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
-    args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
+    args.n_rh = [len(tensors["habit_levels"][rh]) for rh in range(len(tensors["habit_keys"]))]
     # args.n_rh = []
     args.auto_beta = False
     args.auto_alpha = False
     args.coef_beta = 1
-    args.coef_alpha = 0.1
+    args.coef_alpha = 1
     args.nu_h = 1
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
     summary_args.full_tensors = tensors
     summary_args.habitWorstLevels = habitWorstLevels2
+    if(include_medicine):
+        summary_args.habitWorstLevels += medicineWorstLevels
     print(f"D: {args.D}, K: {args.K}")
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=True)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False)
+    _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False)
+    # _excute(model_class, args, data, pathResult, summary_args, from_pickle=False)
 
 
 def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
@@ -152,7 +156,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     wb.save(pathResult.joinpath("accuracy.xlsx"))
 
 
-def _make_data_1(pathDocs, pathTensors):
+def _make_data_1(pathDocs, pathTensors, include_medicine=False):
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         documents = json.load(f)
     with open(str(pathTensors), 'rb') as f:
@@ -161,8 +165,10 @@ def _make_data_1(pathDocs, pathTensors):
     morphomesKeys = tensors["tensor_keys"]
     measurementKeysHC = tensors["measurement_keys"]
     habitKeysHC = tensors["habit_keys"]
-    medicineKeysHC = tensors["medicine_keys"]
     tensors["habit_levels"] = habitLevels2
+    if(include_medicine):
+        habitKeysHC += tensors["medicine_keys"]
+        tensors["habit_levels"] += medicineLevels
 
     docs = [[] for _ in range(len(morphomesKeys))]
     measurements = [[] for _ in range(len(measurementKeysHC))]
@@ -177,16 +183,13 @@ def _make_data_1(pathDocs, pathTensors):
             for rt, key in enumerate(morphomesKeys):
                 docs[rt].append(doc[key + "_morphomes"])
             for rm, key in enumerate(measurementKeysHC):
-                # if(key == "ＨｂＡ１ｃ（ＮＧＳＰ）"):
-                #     measurements[rm].append(tensors[key][idx] + np.random.randn() * 0.1)
-                # else:
                 measurements[rm].append(tensors[key][idx])
             for rh, key in enumerate(habitKeysHC):
                 habits[rh].append(tensors[key][idx])
     data = [docs, np.array(measurements), np.array(habits)]
-    # data = [docs, np.array([]), np.array([])]
-    # data = [[], np.array(measurements), np.array([])]
-    # data = [[], np.array([]), np.array(habits)]
+    # data = [docs, np.empty([0, 0]), np.empty([0, 0])]
+    # data = [[], np.array(measurements), np.empty([0, 0])]
+    # data = [[], np.empty([0, 0]), np.array(habits)]
 
     return documents, tensors, data
 
@@ -210,6 +213,7 @@ def _excute(modelClass, args, data, pathResult, summary_args,
             if((n + 1) % 10 == 0):
                 print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
 
+        print("Summarizing the result")
         pathResult.mkdir(exist_ok=True, parents=True)
         plt.plot(losses)
         plt.savefig(pathResult.joinpath("probability.png"))

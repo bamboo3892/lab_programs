@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from LDA_pytorch.ModelBase import LDABase
 from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
-from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix, addBorderToMaxCell
+from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix, addColorScaleRules, addBorderToMaxCell
 from utils.wordcloud_util import create_wordcloud
 
 
@@ -466,7 +466,7 @@ class MCLDA(LDABase):
         self.model_infer = MCLDA_infer(self, testset, {})
 
 
-    def calc_mean_accuracy_from_testset(self, masked_records, num_subsample_partitions, max_iter=100):
+    def calc_mean_accuracy_from_testset(self, masked_records, num_subsample_partitions, max_iter=100, return_iter=False):
         """
         未知のデータに対するこのモデルの平均正解率を計算する
         事前にset_testsetでテストセットを登録する必要がある
@@ -490,20 +490,32 @@ class MCLDA(LDABase):
             if(n >= 5 and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
                 break
 
-        return self.model_infer.calc_mean_accuracy()
+        if(return_iter):
+            return self.model_infer.calc_mean_accuracy(), n + 1
+        else:
+            return self.model_infer.calc_mean_accuracy()
 
 
     def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions, max_iter=100):
         mean_accuracy = _mask_validate({})
+        mean_accuracy["rt_iter"] = []
+        mean_accuracy["rm_iter"] = []
+        mean_accuracy["rh_iter"] = []
+
         for rt in range(self.Rt):
-            a = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter)
+            a, n = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter, True)
             mean_accuracy["rt"].append(a["rt"][0])
+            mean_accuracy["rt_iter"].append(n)
+
         for rm in range(self.Rm):
-            a = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter)
+            a, n = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter, True)
             mean_accuracy["rm"].append(a["rm"][0])
+            mean_accuracy["rm_iter"].append(n)
+
         for rh in range(self.Rh):
-            a = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter)
+            a, n = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter, True)
             mean_accuracy["rh"].append(a["rh"][0])
+            mean_accuracy["rh_iter"].append(n)
         return mean_accuracy
 
 
@@ -599,13 +611,16 @@ class MCLDA(LDABase):
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,
                     row_names=summary_args.full_tensors["measurement_keys"],
-                    column_names=[f"topic{k+1}" for k in range(self.K)],
-                    rule="colorscale", ruleAxis="column")
+                    column_names=[f"topic{k+1}" for k in range(self.K)])
+        writeVector(ws, self.mu_h_rm.cpu().detach().numpy(), 2, self.K + 3, axis="row")
+        addColorScaleRules(ws, 2, self.Rm + 1, 2, self.K + 3, axis="column")
         addBorderToMaxCell(ws, 2, self.Rm + 1, 2, self.K + 1, axis="column")
-        writeMatrix(ws, sigma, 1, self.K + 3,
+        writeMatrix(ws, sigma, 1, self.K + 5,
                     row_names=summary_args.full_tensors["measurement_keys"],
                     column_names=[f"topic{k+1}" for k in range(self.K)],
                     rule="colorscale", ruleAxis="column")
+        writeVector(ws, self.sigma2_h_rm.pow(0.5).cpu().detach().numpy(), 2, 2 * self.K + 7, axis="row")
+        addColorScaleRules(ws, 2, self.Rm + 1, self.K + 6, 2 * self.K + 7, axis="column")
 
         ws = wb.create_sheet("rho")
         row = 1
@@ -625,7 +640,8 @@ class MCLDA(LDABase):
         for r in range(self.Rh):
             wl = summary_args.habitWorstLevels[r]
             ws.cell(row + r, 1, f'{summary_args.full_tensors["habit_keys"][r]} -> {summary_args.full_tensors["habit_levels"][r][wl]}')
-            writeVector(ws, rho[r][:, wl], row + r, 2, axis="column", rule="colorscale")
+            writeVector(ws, rho[r][:, wl], row + r, 2, axis="column")
+        addColorScaleRules(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
         addBorderToMaxCell(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
 
         ws = wb.create_sheet("alpha_hyper")
