@@ -2,9 +2,11 @@ import openpyxl
 import numpy as np
 import torch
 import pyro.distributions as dist
+import cv2
 
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
+from utils.graphic_util import makeColorMap
 
 DEVICE = torch.device("cuda:0")
 # DEVICE = torch.device("cpu")
@@ -32,6 +34,17 @@ DEVICE = torch.device("cuda:0")
 # #     print("negative")
 # a = dist.Categorical(b).sample()
 
-a = float("")
+# a = float("")
+
+x = np.random.randn(5, 10)
+m = np.full_like(x, True)
+img = makeColorMap(x, 20, 20, axis=0, border_mask=m)
+cv2.imwrite("img.png", img)
+
+# a = np.full((5, 5), 10)
+# c = np.full((5, 5), 20)
+# b = np.full((5, 5), False)
+# b[2, 3] = True
+# a[b] = c[b]
 
 print("aaaaaa")

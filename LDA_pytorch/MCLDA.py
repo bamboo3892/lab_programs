@@ -434,6 +434,19 @@ class MCLDA(LDABase):
             return rho
 
 
+    def getWorstAnswerProbs(self, habitWorstLevels, rhos=None):
+        """
+        Rhoから最悪の回答をする確率の表に変換する [Rh, K]
+        """
+        rhos = rhos if rhos is not None else [self.rho(rh) for rh in range(self.Rh)]
+
+        table = np.zeros((self.Rh, self.K))
+        for r in range(self.Rh):
+            table[r, :] = rhos[r][:, habitWorstLevels[r]]
+
+        return table
+
+
     def log_probability(self, testset=None):
         if(testset is None):
             p = 0.
@@ -466,7 +479,7 @@ class MCLDA(LDABase):
         self.model_infer = MCLDA_infer(self, testset, {})
 
 
-    def calc_mean_accuracy_from_testset(self, masked_records, num_subsample_partitions, max_iter=100, return_iter=False):
+    def calc_mean_accuracy_from_testset(self, masked_records, num_subsample_partitions, max_iter=100, min_iter=10, return_iter=False):
         """
         未知のデータに対するこのモデルの平均正解率を計算する
         事前にset_testsetでテストセットを登録する必要がある
@@ -487,7 +500,7 @@ class MCLDA(LDABase):
         for n in range(max_iter):
             probability = self.model_infer.step(num_subsample_partitions)
             losses.append(probability)
-            if(n >= 5 and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
+            if(n >= min_iter and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
                 break
 
         if(return_iter):
@@ -503,17 +516,17 @@ class MCLDA(LDABase):
         mean_accuracy["rh_iter"] = []
 
         for rt in range(self.Rt):
-            a, n = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter, True)
+            a, n = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter, return_iter=True)
             mean_accuracy["rt"].append(a["rt"][0])
             mean_accuracy["rt_iter"].append(n)
 
         for rm in range(self.Rm):
-            a, n = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter, True)
+            a, n = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter, return_iter=True)
             mean_accuracy["rm"].append(a["rm"][0])
             mean_accuracy["rm_iter"].append(n)
 
         for rh in range(self.Rh):
-            a, n = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter, True)
+            a, n = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter, return_iter=True)
             mean_accuracy["rh"].append(a["rh"][0])
             mean_accuracy["rh_iter"].append(n)
         return mean_accuracy
@@ -528,47 +541,48 @@ class MCLDA(LDABase):
 
 
     def _sammary_figs(self, summary_args):
-        theta = self.theta().T
-        theta = (theta - theta.mean(axis=1)[:, None]) / theta.std(axis=1)[:, None]
+        # theta = self.theta().T
+        # theta = (theta - theta.mean(axis=1)[:, None]) / theta.std(axis=1)[:, None]
 
-        cor = np.corrcoef(theta)
-        cos = np.zeros((self.K, self.K))
-        norm = np.linalg.norm(theta, ord=2, axis=1)
-        for k in range(self.K):
-            cos[k, :] = np.dot(theta, theta[k]) / norm / norm[k]
+        # cor = np.corrcoef(theta)
+        # cos = np.zeros((self.K, self.K))
+        # norm = np.linalg.norm(theta, ord=2, axis=1)
+        # for k in range(self.K):
+        #     cos[k, :] = np.dot(theta, theta[k]) / norm / norm[k]
 
-        p = summary_args.summary_path.joinpath("figs")
-        p.mkdir(exist_ok=True, parents=True)
+        # p = summary_args.summary_path.joinpath("figs")
+        # p.mkdir(exist_ok=True, parents=True)
 
-        mds = manifold.MDS(n_components=2, metric=True, dissimilarity="precomputed", random_state=6)
-        pos = mds.fit_transform(cor)
-        plt.scatter(pos[:, 0], pos[:, 1])
-        for k in range(self.K):
-            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        plt.savefig(p.joinpath("mds_metric_cor_.png"))
-        plt.clf()
+        # mds = manifold.MDS(n_components=2, metric=True, dissimilarity="precomputed", random_state=6)
+        # pos = mds.fit_transform(cor)
+        # plt.scatter(pos[:, 0], pos[:, 1])
+        # for k in range(self.K):
+        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        # plt.savefig(p.joinpath("mds_metric_cor_.png"))
+        # plt.clf()
 
-        pos = mds.fit_transform(cos)
-        plt.scatter(pos[:, 0], pos[:, 1])
-        for k in range(self.K):
-            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        plt.savefig(p.joinpath("mds_metric_cos.png"))
-        plt.clf()
+        # pos = mds.fit_transform(cos)
+        # plt.scatter(pos[:, 0], pos[:, 1])
+        # for k in range(self.K):
+        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        # plt.savefig(p.joinpath("mds_metric_cos.png"))
+        # plt.clf()
 
-        mds = manifold.MDS(n_components=2, metric=False, dissimilarity="precomputed", random_state=6)
-        pos = mds.fit_transform(cor)
-        plt.scatter(pos[:, 0], pos[:, 1])
-        for k in range(self.K):
-            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        plt.savefig(p.joinpath("mds_nonmetric_cor.png"))
-        plt.clf()
+        # mds = manifold.MDS(n_components=2, metric=False, dissimilarity="precomputed", random_state=6)
+        # pos = mds.fit_transform(cor)
+        # plt.scatter(pos[:, 0], pos[:, 1])
+        # for k in range(self.K):
+        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        # plt.savefig(p.joinpath("mds_nonmetric_cor.png"))
+        # plt.clf()
 
-        pos = mds.fit_transform(cos)
-        plt.scatter(pos[:, 0], pos[:, 1])
-        for k in range(self.K):
-            plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        plt.savefig(p.joinpath("mds_nonmetric_cos.png"))
-        plt.clf()
+        # pos = mds.fit_transform(cos)
+        # plt.scatter(pos[:, 0], pos[:, 1])
+        # for k in range(self.K):
+        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
+        # plt.savefig(p.joinpath("mds_nonmetric_cos.png"))
+        # plt.clf()
+        pass
 
 
     def _summary_to_excel(self, summary_args, wb):
