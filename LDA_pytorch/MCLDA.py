@@ -436,7 +436,7 @@ class MCLDA(LDABase):
 
     def getWorstAnswerProbs(self, habitWorstLevels, rhos=None):
         """
-        Rhoから最悪の回答をする確率の表に変換する [Rh, K]
+        Rhoから最悪の回答をする確率の表に変換する(CPU) [Rh, K]
         """
         rhos = rhos if rhos is not None else [self.rho(rh) for rh in range(self.Rh)]
 

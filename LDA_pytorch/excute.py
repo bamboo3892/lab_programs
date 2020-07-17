@@ -67,7 +67,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 500
+    args.num_steps = 100
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -197,45 +197,46 @@ def _make_data_1(pathDocs, pathTensors, include_medicine=False):
 
 
 def _excute(modelClass, args, data, pathResult, summary_args,
-            testset=None, from_pickle=False):
+            testset=None, from_pickle=False, do_hist_analysis=True):
 
     print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle})")
 
     args.device = DEVICE
     summary_args.summary_path = pathResult
 
+    """learning step or existing model"""
     if(from_pickle):
         model = torch.load(pathResult.joinpath("model.pickle"), args.device)
+        history = torch.load(pathResult.joinpath("history.pickle"))
     else:
         model = modelClass(args, data)
         losses = []
-
-        variables = None
-        hist_conv = []
-        rm_boundary = _func0(model)
-        pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
-        out = cv2.VideoWriter(str(pathResult.joinpath("figs", "colormaps.mp4")), cv2.VideoWriter_fourcc(*'mp4v'), 2.0, (500, 500))
+        if(do_hist_analysis):
+            history = []
 
         for n in range(args.num_steps):
             probability = model.step(args.step_subsample)
             losses.append(probability)
             if((n + 1) % 10 == 0):
                 print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
-            variables, conv = _func1(model, summary_args.habitWorstLevels, variables, hist_conv)
-            conv = [None, None, None]
-            img = _func2(model, variables, conv, rm_boundary)
-            out.write(img)
 
-        out.release()
+            if(do_hist_analysis):
+                hist = {}
+                hist["log_probs"] = probability
+                hist.update(_make_variables_summary_dict(model, summary_args.habitWorstLevels))
+                history.append(hist)
+
         print("Summarizing the result")
         pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
         plt.plot(losses)
         plt.savefig(pathResult.joinpath("figs", "probability.png"))
         plt.clf()
         torch.save(model, pathResult.joinpath("model.pickle"))
+        torch.save(history, pathResult.joinpath("history.pickle"))
 
     model.summary(summary_args)
 
+    """accuracy"""
     if(testset is not None):
         print("calcurating accuracy")
         model.set_testset(testset)
@@ -246,8 +247,52 @@ def _excute(modelClass, args, data, pathResult, summary_args,
             text = json.dumps(accuracy, ensure_ascii=False, indent=4)
             output.write(text)
 
+    """history analysis"""
+    if(do_hist_analysis):
+        print("history analysis")
+        pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
+        _make_colormap_video_from_history(model, history, pathResult.joinpath("figs", "colormaps.mp4"))
 
-def _func0(model):
+
+def _make_variables_summary_dict(model, habitWorstLevels):
+    d = {}
+
+    phis = []
+    for rt in range(model.Rt):
+        phis.append(model.phi(rt))
+    d["phis"] = phis
+
+    mus = []
+    for rm in range(model.Rm):
+        mus.append(model.mu(rm))
+    d["mus"] = np.array(mus)
+
+    sigmas = []
+    for rm in range(model.Rm):
+        sigmas.append(model.sigma(rm))
+    d["sigmas"] = np.array(sigmas)
+
+    d["rhos"] = model.getWorstAnswerProbs(habitWorstLevels)
+
+    return d
+
+
+def _make_colormap_video_from_history(final_model, history, path):
+    rm_boundary = _get_rm_boundary(final_model)
+    out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'mp4v'), 2.0, (500, 500))
+    variables = history[0]
+    hist_conv = []
+
+    for hist in history[1:]:
+        img = _get_colormap(final_model, hist, variables, hist_conv, rm_boundary)
+        out.write(img)
+        # conv = [None, None, None]
+        # img = _func2(model, variables, conv, rm_boundary)
+
+    out.release()
+
+
+def _get_rm_boundary(model):
     mean = torch.mean(model.x_rm, 1).cpu().detach().numpy().copy()
     std = torch.std(model.x_rm, 1).cpu().detach().numpy().copy()
     lower = np.repeat((mean - std)[None, :], model.K, axis=0)
@@ -255,60 +300,44 @@ def _func0(model):
     return [lower, upper]
 
 
-def _func1(model, habitWorstLevels, past_variables, hist_conv):
-    phi = mu = rho = None
+def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boundary):
+    canvas = np.zeros((500, 500, 3), dtype=np.uint8)
     conv1 = [None, None, None]
     conv2 = [None, None, None]
 
-    if(model.Rt != 0):
-        phi = model.phi(0)[:, :10]
-        if(past_variables is not None):
-            conv1[0] = np.isclose(phi, past_variables[0], rtol=5e-02, atol=0e-08)
-            if(len(hist_conv) >= 4):
-                conv2[0] = conv1[0]
-                for i in range(4):
-                    conv2[0] &= hist_conv[-1 - i][0]
-
-    if(model.Rm != 0):
-        mu = np.array([model.mu(rm) for rm in range(model.Rm)]).T
-        if(past_variables is not None):
-            conv1[1] = np.isclose(mu, past_variables[1], rtol=5e-02, atol=0e-08)
-            if(len(hist_conv) >= 4):
-                conv2[1] = conv1[1]
-                for i in range(4):
-                    conv2[1] &= hist_conv[-1 - i][1]
-
-    if(model.Rh != 0):
-        rho = model.getWorstAnswerProbs(habitWorstLevels).T
-        if(past_variables is not None):
-            conv1[2] = np.isclose(rho, past_variables[2], rtol=5e-02, atol=0e-08)
-            if(len(hist_conv) >= 4):
-                conv2[2] = conv1[2]
-                for i in range(4):
-                    conv2[2] &= hist_conv[-1 - i][2]
-
-    if(past_variables is not None):
-        hist_conv.append(conv1)
-    return [phi, mu, rho], conv2
-
-
-def _func2(model, variables, convergences, rm_boundary):
-    canvas = np.zeros((500, 500, 3), dtype=np.uint8)
-
-    if(model.Rt != 0):
-        img_phi = makeColorMap(variables[0], 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                               boundary=[0., 0.05], border_mask=convergences[0])  # K*40 x 100
+    if(final_model.Rt != 0):
+        phi = now_variables["phis"][0][:, :10]
+        conv1[0] = np.isclose(phi, past_variables["phis"][0][:, :10], rtol=5e-02, atol=0e-08)
+        if(len(hist_conv) >= 4):
+            conv2[0] = conv1[0]
+            for i in range(4):
+                conv2[0] &= hist_conv[-1 - i][0]
+        img_phi = makeColorMap(phi, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+                               boundary=[0., 0.05], border_mask=conv2[0])  # K*40 x 100
         addImage(canvas, img_phi, 0, 0)
 
-    if(model.Rm != 0):
-        img_mu = makeColorMap(variables[1], 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                              boundary=rm_boundary, border_mask=convergences[1])  # K*40 x Rm*10
+    if(final_model.Rm != 0):
+        mu = now_variables["mus"].T
+        conv1[1] = np.isclose(mu, past_variables["mus"].T, rtol=5e-02, atol=0e-08)
+        if(len(hist_conv) >= 4):
+            conv2[1] = conv1[1]
+            for i in range(4):
+                conv2[1] &= hist_conv[-1 - i][1]
+        img_mu = makeColorMap(mu, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+                              boundary=rm_boundary, border_mask=conv2[1])  # K*40 x Rm*10
         addImage(canvas, img_mu, 0, 120)
 
-    if(model.Rh != 0):
-        img_rho = makeColorMap(variables[2], 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                               boundary=[0., 1.], border_mask=convergences[2])  # K*40 x Rh*10
-        addImage(canvas, img_rho, 0, 140 + model.Rm * 10)
+    if(final_model.Rh != 0):
+        rho = now_variables["rhos"].T
+        conv1[2] = np.isclose(rho, past_variables["rhos"].T, rtol=5e-02, atol=0e-08)
+        if(len(hist_conv) >= 4):
+            conv2[2] = conv1[2]
+            for i in range(4):
+                conv2[2] &= hist_conv[-1 - i][2]
+        img_rho = makeColorMap(rho, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+                               boundary=[0., 1.], border_mask=conv2[2])  # K*40 x Rh*10
+        addImage(canvas, img_rho, 0, 140 + final_model.Rm * 10)
 
+    hist_conv.append(conv1)
     canvas = np.transpose(canvas, [1, 0, 2])
     return canvas
