@@ -67,7 +67,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 100
+    args.num_steps = 1000
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -252,14 +252,17 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         print("history analysis")
         pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
         _make_colormap_video_from_history(model, history, pathResult.joinpath("figs", "colormaps.mp4"))
+        _make_step_hist_figs(model, history, pathResult.joinpath("figs"))
 
 
 def _make_variables_summary_dict(model, habitWorstLevels):
     d = {}
 
+    d["theta"] = model.theta()[:100, :]
+
     phis = []
     for rt in range(model.Rt):
-        phis.append(model.phi(rt))
+        phis.append(model.phi(rt)[:, :100])
     d["phis"] = phis
 
     mus = []
@@ -341,3 +344,34 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
     hist_conv.append(conv1)
     canvas = np.transpose(canvas, [1, 0, 2])
     return canvas
+
+
+def _make_step_hist_figs(final_model, history, pathFigs):
+
+    for rt in range(final_model.Rt):
+        fig = plt.figure(figsize=[25, 10])
+        for v in range(10):
+            ax = fig.add_subplot(2, 5, v + 1)
+            for k in range(final_model.K):
+                data = [hist["phis"][rt][k, v] for hist in history]
+                # ax.set_ylim(bottom=0)
+                ax.plot(data)
+        fig.savefig(pathFigs.joinpath(f"phis{rt+1}_hist.png"))
+
+    fig = plt.figure(figsize=[25, 10])
+    for rm in range(final_model.Rm):
+        ax = fig.add_subplot((final_model.Rm - 1) // 5 + 1, 5, rm + 1)
+        for k in range(final_model.K):
+            data = [hist["mus"][rm, k] for hist in history]
+            # ax.set_ylim(bottom=0)
+            ax.plot(data)
+    fig.savefig(pathFigs.joinpath("mus_hist.png"))
+
+    fig = plt.figure(figsize=[25, 10])
+    for rh in range(final_model.Rh):
+        ax = fig.add_subplot((final_model.Rh - 1) // 5 + 1, 5, rh + 1)
+        for k in range(final_model.K):
+            data = [hist["rhos"][rh, k] for hist in history]
+            # ax.set_ylim(bottom=0)
+            ax.plot(data)
+    fig.savefig(pathFigs.joinpath("rhos_hist.png"))
