@@ -1,0 +1,37 @@
+D: 8085, K: 1
+Model: MCLDA  (to Ks/K1 seed0) (from pickle: False)
+i:10    loss:-3317611.472573
+i:20    loss:-3317611.472573
+i:30    loss:-3317611.472573
+i:40    loss:-3317611.472573
+i:50    loss:-3317611.472573
+i:60    loss:-3317611.472573
+i:70    loss:-3317611.472573
+i:80    loss:-3317611.472573
+i:90    loss:-3317611.472573
+i:100   loss:-3317611.472573
+i:110   loss:-3317611.472573
+i:120   loss:-3317611.472573
+i:130   loss:-3317611.472573
+i:140   loss:-3317611.472573
+i:150   loss:-3317611.472573
+i:160   loss:-3317611.472573
+i:170   loss:-3317611.472573
+i:180   loss:-3317611.472573
+i:190   loss:-3317611.472573
+i:200   loss:-3317611.472573
+Saving the result
+Traceback (most recent call last):
+  File "main_ubuntu.py", line 379, in <module>
+    pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+  File "/home/takeda.masaki/lab/program/LDA_pytorch/excute.py", line 139, in excuteMCLDA_K_range
+    testset=testset, from_pickle=False, do_hist_analysis=False)
+  File "/home/takeda.masaki/lab/program/LDA_pytorch/excute.py", line 239, in _excute
+    torch.save(model, pathResult.joinpath("model.pickle"))
+  File "/home/takeda.masaki/anaconda3/lib/python3.7/site-packages/torch/serialization.py", line 369, in save
+    with _open_file_like(f, 'wb') as opened_file:
+  File "/home/takeda.masaki/anaconda3/lib/python3.7/site-packages/torch/serialization.py", line 234, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/home/takeda.masaki/anaconda3/lib/python3.7/site-packages/torch/serialization.py", line 215, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+PermissionError: [Errno 13] Permission denied: 'Ks/K1 seed0/model.pickle'

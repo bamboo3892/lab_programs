@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import pyro.distributions as dist
 import cv2
+import time
 
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
 from utils.wordcloud_util import create_wordcloud
@@ -48,3 +49,4 @@ cv2.imwrite("img.png", img)
 # a[b] = c[b]
 
 print("aaaaaa")
+time.sleep(100)

@@ -9,9 +9,9 @@ import cv2
 from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2, medicineLevels, medicineWorstLevels
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
-from utils.general_util import Args
+from utils.general_util import Args, min_max_normalize, simple_moving_average
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix
-from utils.graphic_util import makeColorMap, addImage, DEFAULT_COLOR_FUNC2
+from utils.graphic_util import makeColorMap, addImage, DEFAULT_COLOR_FUNC, DEFAULT_COLOR_FUNC2
 
 
 seed = 1
@@ -67,7 +67,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 1000
+    args.num_steps = 100
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -108,7 +108,6 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.num_steps = 200
     args.step_subsample = 10
-    # args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
     args.n_rh = [len(habitLevels2[rh]) for rh in range(len(tensors["habit_keys"]))]
     args.auto_beta = False
@@ -120,20 +119,30 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
 
-    # Ks = [1] + np.arange(10, 101, 10).tolist()
-    Ks = np.arange(1, 21, 1).tolist()
-    for K in Ks:
+    # Ks = np.arange(1, 21, 1).tolist()
+    # seeds = np.arange(0, 20).tolist()
+    # fnames = [f"K{k}" for k in Ks]
+    Ks = []
+    seeds = []
+    fnames = []
+    for seed in range(10):
+        for k in range(1, 21):
+            Ks.append(k)
+            seeds.append(seed)
+            fnames.append(f"K{k}_seed{seed}")
+
+    for i, K in enumerate(Ks):
         args.K = K
+        args.random_seed = seeds[i]
         print(f"D: {args.D}, K: {args.K}")
-        # _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args, testset=testset)
-        _excute(model_class, args, data, pathResult.joinpath(f"K{K}"), summary_args,
-                testset=testset, from_pickle=False)
+        _excute(model_class, args, data, pathResult.joinpath(fnames[i]), summary_args,
+                testset=testset, from_pickle=False, do_hist_analysis=False)
 
     accuracies_rt = []
     accuracies_rm = []
     accuracies_rh = []
-    for K in Ks:
-        with open(str(pathResult.joinpath(f"K{K}", "accuracy.json")), "r", encoding="utf_8_sig") as f:
+    for i, K in enumerate(Ks):
+        with open(str(pathResult.joinpath(fnames[i], "accuracy.json")), "r", encoding="utf_8_sig") as f:
             accuracy = json.load(f)
             accuracies_rt.append(accuracy["rt"])
             accuracies_rm.append(accuracy["rm"])
@@ -202,7 +211,10 @@ def _excute(modelClass, args, data, pathResult, summary_args,
     print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle})")
 
     args.device = DEVICE
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
     summary_args.summary_path = pathResult
+    pathResult.mkdir(exist_ok=True, parents=True)
 
     """learning step or existing model"""
     if(from_pickle):
@@ -210,31 +222,29 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         history = torch.load(pathResult.joinpath("history.pickle"))
     else:
         model = modelClass(args, data)
-        losses = []
-        if(do_hist_analysis):
-            history = []
+        history = []
 
         for n in range(args.num_steps):
             probability = model.step(args.step_subsample)
-            losses.append(probability)
             if((n + 1) % 10 == 0):
                 print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
 
+            hist = {}
+            hist["log_probs"] = probability
             if(do_hist_analysis):
-                hist = {}
-                hist["log_probs"] = probability
                 hist.update(_make_variables_summary_dict(model, summary_args.habitWorstLevels))
                 history.append(hist)
 
-        print("Summarizing the result")
-        pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
-        plt.plot(losses)
-        plt.savefig(pathResult.joinpath("figs", "probability.png"))
-        plt.clf()
+        print("Saving the result")
         torch.save(model, pathResult.joinpath("model.pickle"))
         torch.save(history, pathResult.joinpath("history.pickle"))
 
-    model.summary(summary_args)
+    print("Saving the summary")
+    # model.summary(summary_args)
+    pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
+    plt.plot([hist["log_probs"] for hist in history])
+    plt.savefig(pathResult.joinpath("figs", "probability.png"))
+    plt.close()
 
     """accuracy"""
     if(testset is not None):
@@ -289,8 +299,7 @@ def _make_colormap_video_from_history(final_model, history, path):
     for hist in history[1:]:
         img = _get_colormap(final_model, hist, variables, hist_conv, rm_boundary)
         out.write(img)
-        # conv = [None, None, None]
-        # img = _func2(model, variables, conv, rm_boundary)
+        variables = hist
 
     out.release()
 
@@ -315,8 +324,9 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
             conv2[0] = conv1[0]
             for i in range(4):
                 conv2[0] &= hist_conv[-1 - i][0]
-        img_phi = makeColorMap(phi, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                               boundary=[0., 0.05], border_mask=conv2[0])  # K*40 x 100
+        img_phi = makeColorMap(phi, 40, 10, color_func=DEFAULT_COLOR_FUNC, axis=0)  # K*40 x 100
+        # img_phi = makeColorMap(phi, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+        #                        boundary=[0., 0.05], border_mask=conv2[0])  # K*40 x 100
         addImage(canvas, img_phi, 0, 0)
 
     if(final_model.Rm != 0):
@@ -326,8 +336,9 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
             conv2[1] = conv1[1]
             for i in range(4):
                 conv2[1] &= hist_conv[-1 - i][1]
-        img_mu = makeColorMap(mu, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                              boundary=rm_boundary, border_mask=conv2[1])  # K*40 x Rm*10
+        img_mu = makeColorMap(mu, 40, 10, color_func=DEFAULT_COLOR_FUNC, axis=0)  # K*40 x Rm*10
+        # img_mu = makeColorMap(mu, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+        #                       boundary=rm_boundary, border_mask=conv2[1])  # K*40 x Rm*10
         addImage(canvas, img_mu, 0, 120)
 
     if(final_model.Rh != 0):
@@ -337,8 +348,9 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
             conv2[2] = conv1[2]
             for i in range(4):
                 conv2[2] &= hist_conv[-1 - i][2]
-        img_rho = makeColorMap(rho, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
-                               boundary=[0., 1.], border_mask=conv2[2])  # K*40 x Rh*10
+        img_rho = makeColorMap(rho, 40, 10, color_func=DEFAULT_COLOR_FUNC, axis=0)  # K*40 x Rh*10
+        # img_rho = makeColorMap(rho, 40, 10, color_func=DEFAULT_COLOR_FUNC2,
+        #                        boundary=[0., 1.], border_mask=conv2[2])  # K*40 x Rh*10
         addImage(canvas, img_rho, 0, 140 + final_model.Rm * 10)
 
     hist_conv.append(conv1)
@@ -347,31 +359,92 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
 
 
 def _make_step_hist_figs(final_model, history, pathFigs):
+    path_step_hist_for_each_r = pathFigs.joinpath("step_hist_each_r")
+    path_step_hist_for_each_k = pathFigs.joinpath("step_hist_each_k")
+    path_step_hist_for_each_r.mkdir(exist_ok=True, parents=True)
+    path_step_hist_for_each_k.mkdir(exist_ok=True, parents=True)
+
+    phis = np.array([hist["phis"] for hist in history])  # [step, rt, k, v]
+    mus = np.array([hist["mus"] for hist in history])  # [step, rm, k]
+    rhos = np.array([hist["rhos"] for hist in history])  # [step, rh, k]
+
+    # moving average
+    num = 50
+    window = np.ones(num) / num
+    phis = simple_moving_average(phis, window)
+    mus = simple_moving_average(mus, window)
+    rhos = simple_moving_average(rhos, window)
 
     for rt in range(final_model.Rt):
+
+        # phi, r固定, v固定, k間比較
         fig = plt.figure(figsize=[25, 10])
         for v in range(10):
             ax = fig.add_subplot(2, 5, v + 1)
             for k in range(final_model.K):
-                data = [hist["phis"][rt][k, v] for hist in history]
-                # ax.set_ylim(bottom=0)
-                ax.plot(data)
-        fig.savefig(pathFigs.joinpath(f"phis{rt+1}_hist.png"))
+                ax.set_title(f"vocab{v+1}")
+                ax.plot(phis[:, rt, k, v], label=f"topic{k+1}")
+        fig.legend([f"topic{k+1}" for k in range(final_model.K)])
+        fig.savefig(path_step_hist_for_each_r.joinpath(f"phis{rt+1}_hist.png"))
+        plt.close(fig)
 
+        # phi, rt固定, k固定, v間比較
+        fig = plt.figure(figsize=[25, 10])
+        phis_n = min_max_normalize(phis[:, rt, :, :], axis=(0, 1))
+        for k in range(final_model.K):
+            ax = fig.add_subplot((final_model.K - 1) // 5 + 1, 5, k + 1)
+            ax.set_ylim((0, 1))
+            for v in range(10):
+                ax.set_title(f"topic{k+1}")
+                ax.plot(phis_n[:, k, v], label=f"vocab{v+1}")
+        fig.legend([f"vocab{v+1}" for v in range(10)])
+        fig.savefig(path_step_hist_for_each_k.joinpath(f"phis{rt+1}_hist.png"))
+        plt.close(fig)
+
+    # mu, r固定, k間比較
     fig = plt.figure(figsize=[25, 10])
     for rm in range(final_model.Rm):
         ax = fig.add_subplot((final_model.Rm - 1) // 5 + 1, 5, rm + 1)
         for k in range(final_model.K):
-            data = [hist["mus"][rm, k] for hist in history]
-            # ax.set_ylim(bottom=0)
-            ax.plot(data)
-    fig.savefig(pathFigs.joinpath("mus_hist.png"))
+            ax.set_title(f"rm={rm+1}")
+            ax.plot(mus[:, rm, k])
+    fig.legend([f"topic{k+1}" for k in range(final_model.K)])
+    fig.savefig(path_step_hist_for_each_r.joinpath("mus_hist.png"))
+    plt.close(fig)
 
+    # mu, k固定, r間比較 (step, rに関して正規化)
+    fig = plt.figure(figsize=[25, 10])
+    mus_n = min_max_normalize(mus, axis=(0, 2))
+    for k in range(final_model.K):
+        ax = fig.add_subplot((final_model.K - 1) // 5 + 1, 5, k + 1)
+        ax.set_ylim((0., 1.))
+        for rm in range(final_model.Rm):
+            ax.set_title(f"topic{k+1}")
+            ax.plot(mus_n[:, rm, k])
+    fig.legend([f"rm={rm+1}" for rm in range(final_model.Rm)])
+    fig.savefig(path_step_hist_for_each_k.joinpath("mus_hist.png"))
+    plt.close(fig)
+
+    # rho, r固定, k間比較
     fig = plt.figure(figsize=[25, 10])
     for rh in range(final_model.Rh):
         ax = fig.add_subplot((final_model.Rh - 1) // 5 + 1, 5, rh + 1)
         for k in range(final_model.K):
-            data = [hist["rhos"][rh, k] for hist in history]
-            # ax.set_ylim(bottom=0)
-            ax.plot(data)
-    fig.savefig(pathFigs.joinpath("rhos_hist.png"))
+            ax.set_title(f"rh={rh+1}")
+            ax.plot(rhos[:, rh, k])
+    fig.legend([f"topic{k+1}" for k in range(final_model.K)])
+    fig.savefig(path_step_hist_for_each_r.joinpath("rhos_hist.png"))
+    plt.close(fig)
+
+    # rho, k固定, r間比較 (step, rに関して正規化)
+    fig = plt.figure(figsize=[25, 10])
+    rhos_n = min_max_normalize(rhos, axis=(0, 2))
+    for k in range(final_model.K):
+        ax = fig.add_subplot((final_model.K - 1) // 5 + 1, 5, k + 1)
+        ax.set_ylim((0., 1.))
+        for rh in range(final_model.Rh):
+            ax.set_title(f"topic{k+1}")
+            ax.plot(rhos_n[:, rh, k])
+    fig.legend([f"rh={rh+1}" for rh in range(final_model.Rh)])
+    fig.savefig(path_step_hist_for_each_k.joinpath("rhos_hist.png"))
+    plt.close(fig)
