@@ -37,10 +37,10 @@ DEVICE = torch.device("cuda:0")
 
 # a = float("")
 
-x = np.random.randn(5, 10)
-m = np.full_like(x, True)
-img = makeColorMap(x, 20, 20, axis=0, border_mask=m)
-cv2.imwrite("img.png", img)
+# x = np.random.randn(5, 10)
+# m = np.full_like(x, True)
+# img = makeColorMap(x, 20, 20, axis=0, border_mask=m)
+# cv2.imwrite("img.png", img)
 
 # a = np.full((5, 5), 10)
 # c = np.full((5, 5), 20)
@@ -48,5 +48,9 @@ cv2.imwrite("img.png", img)
 # b[2, 3] = True
 # a[b] = c[b]
 
+a = torch.randn((5, 6))
+c = torch.arange(0, 5)
+b = torch.argmax(a, dim=1)
+a[c, b] = 100
+
 print("aaaaaa")
-time.sleep(100)

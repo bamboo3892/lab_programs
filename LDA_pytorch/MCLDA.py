@@ -128,8 +128,13 @@ class MCLDA(LDABase):
         self._nd = torch.sum(self._tpd, 1)
 
 
-    def step(self, num_subsample_partitions, parameter_update=False):
+    def step(self, num_subsample_partitions, parameter_update=False, deterministic_coef=None):
         """
+        num_subsample_partitions: 何回に分けてzのサンプリングを行うか
+        parameter_update: パラメータをアップデートするか(未実装)
+        deterministic_coef: 学習率に対応するようなパラメータ，0で通常のMCMC，1でzを点推定
+                            Noneなら0に相当する動きをして，これに関わる計算をしないので少し早い
+
         1. update z, wpt, ...
         2. update parameters if neseccary
         """
@@ -152,19 +157,19 @@ class MCLDA(LDABase):
                 s = (self.totalN_rt[rt] // num_subsample_partitions + 1) * n
                 e = (self.totalN_rt[rt] // num_subsample_partitions + 1) * (n + 1) - 1
                 e = e if e < self.totalN_rt[rt] else self.totalN_rt[rt] - 1
-                self._sampling_rt(rt, rand_perm_rt[rt][s:e])
+                self._sampling_rt(rt, rand_perm_rt[rt][s:e], deterministic_coef)
             # measurements
             for rm in range(self.Rm):
                 s = (self.D // num_subsample_partitions + 1) * n
                 e = (self.D // num_subsample_partitions + 1) * (n + 1) - 1
                 e = e if e < self.D else self.D - 1
-                self._sampling_rm(rm, rand_perm_rm[rm][s:e])
+                self._sampling_rm(rm, rand_perm_rm[rm][s:e], deterministic_coef)
             # habits
             for rh in range(self.Rh):
                 s = (self.D // num_subsample_partitions + 1) * n
                 e = (self.D // num_subsample_partitions + 1) * (n + 1) - 1
                 e = e if e < self.D else self.D - 1
-                self._sampling_rh(rh, rand_perm_rh[rh][s:e])
+                self._sampling_rh(rh, rand_perm_rh[rh][s:e], deterministic_coef)
 
         # update parameters
         if(parameter_update):
@@ -184,7 +189,7 @@ class MCLDA(LDABase):
         return self.log_probability()
 
 
-    def _sampling_rt(self, rt, idx):
+    def _sampling_rt(self, rt, idx, deterministic_coef=None):
         """
         1. sampleing z
         2. update wpt, tpd, wt
@@ -193,7 +198,7 @@ class MCLDA(LDABase):
         before = self.z_rt[rt][idx].clone()
 
         # zをサンプリング
-        probs = self._get_z_rt_sampling_probs(rt, idx)
+        probs = self._get_z_rt_sampling_probs(rt, idx, deterministic_coef)
         self.z_rt[rt][idx] = dist.Categorical(probs).sample()
 
         # wptとか更新
@@ -211,7 +216,7 @@ class MCLDA(LDABase):
         #     assert self._wpt_rt[rt][k, v] == torch.sum(torch.logical_and(self.z_rt[rt] == k, self.wordids_rt[rt] == v))
 
 
-    def _get_z_rt_sampling_probs(self, rt, idx):
+    def _get_z_rt_sampling_probs(self, rt, idx, deterministic_coef=None):
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)  # [subsample_size, K]
         a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)     # [subsample_size, K]
@@ -235,10 +240,14 @@ class MCLDA(LDABase):
         #            * (self._tpd[d, k] - a0 + self.alpha[k]) / (self._nd[d] + self.alpha.sum() - a0))
 
         probs /= torch.sum(probs, dim=1, keepdim=True)
+
+        if(deterministic_coef is not None):
+            probs = self._to_deterministic_probs(probs, deterministic_coef)
+
         return probs
 
 
-    def _sampling_rm(self, rm, idx):
+    def _sampling_rm(self, rm, idx, deterministic_coef=None):
         """
         1. sampleing z
         2. update tpd, mean_rm, std_rm
@@ -247,7 +256,7 @@ class MCLDA(LDABase):
         before = self.z_rm[rm][idx].clone()
 
         # zをサンプリング
-        probs = self._get_z_rm_sampling_probs(rm, idx)
+        probs = self._get_z_rm_sampling_probs(rm, idx, deterministic_coef)
         self.z_rm[rm][idx] = dist.Categorical(probs).sample()
 
         # tpdとか更新
@@ -272,7 +281,7 @@ class MCLDA(LDABase):
         self._std_rm[rm][torch.isnan(self._std_rm[rm])] = 0
 
 
-    def _get_z_rm_sampling_probs(self, rm, idx):
+    def _get_z_rm_sampling_probs(self, rm, idx, deterministic_coef=None):
         """
         本来_mean_rmと_std_rmは自分の影響を除いて計算するべきだけど，近似的にかわらないとした
 
@@ -317,10 +326,14 @@ class MCLDA(LDABase):
         #                           * dist.Normal(self._mean_rm[rm, k], self._std_rm[rm, k]).log_prob(x).exp())
 
         probs /= torch.sum(probs, dim=1, keepdim=True)
+
+        if(deterministic_coef is not None):
+            probs = self._to_deterministic_probs(probs, deterministic_coef)
+
         return probs
 
 
-    def _sampling_rh(self, rh, idx):
+    def _sampling_rh(self, rh, idx, deterministic_coef=None):
         """
         1. sampleing z
         2. update tpd, xpt, xt
@@ -329,7 +342,7 @@ class MCLDA(LDABase):
         before = self.z_rh[rh][idx].clone()
 
         # zをサンプリング
-        probs = self._get_z_rh_sampling_probs(rh, idx)
+        probs = self._get_z_rh_sampling_probs(rh, idx, deterministic_coef)
         self.z_rh[rh][idx] = dist.Categorical(probs).sample()
 
         # tpdとか更新
@@ -347,7 +360,7 @@ class MCLDA(LDABase):
         #     assert self._xpt_rh[rh][k, x] == torch.sum(torch.logical_and(self.z_rh[rh] == k, self.x_rh[rh] == x))
 
 
-    def _get_z_rh_sampling_probs(self, rh, idx):
+    def _get_z_rh_sampling_probs(self, rh, idx, deterministic_coef=None):
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)  # [subsample_size, K]
         a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)     # [subsample_size, K]
@@ -371,7 +384,19 @@ class MCLDA(LDABase):
         #            * (self._tpd[d, k] - a0 + self.alpha[k]) / (self._nd[d] + self.alpha.sum() - a0))
 
         probs /= torch.sum(probs, dim=1, keepdim=True)
+
+        if(deterministic_coef is not None):
+            probs = self._to_deterministic_probs(probs, deterministic_coef)
+
         return probs
+
+
+    def _to_deterministic_probs(self, probs, deterministic_coef):
+        deterministic_probs = torch.full_like(probs, 0.0, device=self.device, dtype=torch.float64)
+        idx0 = torch.arange(probs.shape[0], device=self.device, dtype=torch.int64)
+        idx1 = torch.argmax(probs, dim=1)
+        deterministic_probs[idx0, idx1] = 1.
+        return (1 - deterministic_coef) * probs + deterministic_coef * deterministic_probs
 
 
     def _update_parameters(self):

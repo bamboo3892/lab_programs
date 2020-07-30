@@ -67,7 +67,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 100
+    args.num_steps = 1000
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -78,9 +78,10 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.coef_beta = 1
     args.coef_alpha = 1
     args.nu_h = 1
+    # args.deterministic_coefs = [None] * args.num_steps
+    args.deterministic_coefs = np.linspace(0., 0.1, args.num_steps).tolist()
 
     summary_args.full_docs = documents
-    summary_args.full_tensors = tensors
     summary_args.full_tensors = tensors
     summary_args.habitWorstLevels = habitWorstLevels2
     if(include_medicine):
@@ -89,8 +90,9 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False)
+    # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=True, do_hist_analysis=True)
+    # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
 def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
@@ -115,9 +117,11 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     args.coef_beta = 1
     args.coef_alpha = 1
     args.nu_h = 1
+    args.deterministic_coefs = [None] * args.num_steps
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
+    summary_args.habitWorstLevels = habitWorstLevels2
 
     # Ks = np.arange(1, 21, 1).tolist()
     # seeds = np.arange(0, 20).tolist()
@@ -126,7 +130,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     seeds = []
     fnames = []
     for seed in range(10):
-        for k in range(1, 21):
+        for k in [1, 10, 20, 30, 40, 50]:
             Ks.append(k)
             seeds.append(seed)
             fnames.append(f"K{k}_seed{seed}")
@@ -137,6 +141,8 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
         print(f"D: {args.D}, K: {args.K}")
         _excute(model_class, args, data, pathResult.joinpath(fnames[i]), summary_args,
                 testset=testset, from_pickle=False, do_hist_analysis=False)
+        # _excute(model_class, args, data, pathResult.joinpath(fnames[i]), summary_args,
+        #         testset=None, from_pickle=True, do_hist_analysis=False)
 
     accuracies_rt = []
     accuracies_rm = []
@@ -206,9 +212,9 @@ def _make_data_1(pathDocs, pathTensors, include_medicine=False):
 
 
 def _excute(modelClass, args, data, pathResult, summary_args,
-            testset=None, from_pickle=False, do_hist_analysis=True):
+            testset=None, from_pickle=False, continue_from_pickle=False, do_hist_analysis=False):
 
-    print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle})")
+    print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle}) (continue from pickle: {continue_from_pickle})")
 
     args.device = DEVICE
     np.random.seed(args.random_seed)
@@ -221,11 +227,16 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         model = torch.load(pathResult.joinpath("model.pickle"), args.device)
         history = torch.load(pathResult.joinpath("history.pickle"))
     else:
-        model = modelClass(args, data)
-        history = []
+        if(not continue_from_pickle):
+            model = modelClass(args, data)
+            history = []
+        else:
+            model = torch.load(pathResult.joinpath("model.pickle"), args.device)
+            history = torch.load(pathResult.joinpath("history.pickle"))
+            model.args.num_steps += args.num_steps
 
         for n in range(args.num_steps):
-            probability = model.step(args.step_subsample)
+            probability = model.step(args.step_subsample, deterministic_coef=args.deterministic_coefs[n])
             if((n + 1) % 10 == 0):
                 print("i:{:<5d} loss:{:<f}".format(n + 1, probability))
 
@@ -233,14 +244,14 @@ def _excute(modelClass, args, data, pathResult, summary_args,
             hist["log_probs"] = probability
             if(do_hist_analysis):
                 hist.update(_make_variables_summary_dict(model, summary_args.habitWorstLevels))
-                history.append(hist)
+            history.append(hist)
 
         print("Saving the result")
         torch.save(model, pathResult.joinpath("model.pickle"))
         torch.save(history, pathResult.joinpath("history.pickle"))
 
     print("Saving the summary")
-    # model.summary(summary_args)
+    model.summary(summary_args)
     pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
     plt.plot([hist["log_probs"] for hist in history])
     plt.savefig(pathResult.joinpath("figs", "probability.png"))
@@ -262,7 +273,7 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         print("history analysis")
         pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
         _make_colormap_video_from_history(model, history, pathResult.joinpath("figs", "colormaps.mp4"))
-        _make_step_hist_figs(model, history, pathResult.joinpath("figs"))
+        _make_step_hist_figs(model, history, pathResult.joinpath("figs"), window_size=50)
 
 
 def _make_variables_summary_dict(model, habitWorstLevels):
@@ -297,7 +308,7 @@ def _make_colormap_video_from_history(final_model, history, path):
     hist_conv = []
 
     for hist in history[1:]:
-        img = _get_colormap(final_model, hist, variables, hist_conv, rm_boundary)
+        img = _make_colormap(final_model, hist, variables, hist_conv, rm_boundary)
         out.write(img)
         variables = hist
 
@@ -312,7 +323,7 @@ def _get_rm_boundary(model):
     return [lower, upper]
 
 
-def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boundary):
+def _make_colormap(final_model, now_variables, past_variables, hist_conv, rm_boundary):
     canvas = np.zeros((500, 500, 3), dtype=np.uint8)
     conv1 = [None, None, None]
     conv2 = [None, None, None]
@@ -358,7 +369,7 @@ def _get_colormap(final_model, now_variables, past_variables, hist_conv, rm_boun
     return canvas
 
 
-def _make_step_hist_figs(final_model, history, pathFigs):
+def _make_step_hist_figs(final_model, history, pathFigs, window_size=50):
     path_step_hist_for_each_r = pathFigs.joinpath("step_hist_each_r")
     path_step_hist_for_each_k = pathFigs.joinpath("step_hist_each_k")
     path_step_hist_for_each_r.mkdir(exist_ok=True, parents=True)
@@ -369,8 +380,7 @@ def _make_step_hist_figs(final_model, history, pathFigs):
     rhos = np.array([hist["rhos"] for hist in history])  # [step, rh, k]
 
     # moving average
-    num = 50
-    window = np.ones(num) / num
+    window = np.ones(window_size) / window_size
     phis = simple_moving_average(phis, window)
     mus = simple_moving_average(mus, window)
     rhos = simple_moving_average(rhos, window)
