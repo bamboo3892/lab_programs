@@ -40,8 +40,8 @@ class MCLDA_infer:
         self.x_rm = measurements                                                             # [Rm, D]
         self.x_rh = habits                                                                   # [Rh, D]
         self.z_rt = [None for _ in range(self.M.Rt)]                                         # [Rt][totalN_rt]
-        self.z_rm = torch.full([self.M.Rm, D], -1, device=self.device, dtype=torch.int64)    # [Rm, D]
-        self.z_rh = torch.full([self.M.Rh, D], -1, device=self.device, dtype=torch.int64)    # [Rh, D]
+        self.z_rm = torch.full([self.M.Rm, D], self.M.K, device=self.device, dtype=torch.int64)    # [Rm, D]
+        self.z_rh = torch.full([self.M.Rh, D], self.M.K, device=self.device, dtype=torch.int64)    # [Rh, D]
 
         self.alpha = torch.full([self.M.K], self.M.args.coef_alpha, device=self.device, dtype=torch.float64)
 
@@ -73,8 +73,8 @@ class MCLDA_infer:
         self.mask_ratio = mask_ratio
         self.masked_idx = [None for _ in range(self.M.Rt)]
         self.z_rt = [None for _ in range(self.M.Rt)]                                            # [Rt][totalN_rt]
-        self.z_rm = torch.full([self.M.Rm, self.D], -1, device=self.device, dtype=torch.int64)  # [Rm, D]
-        self.z_rh = torch.full([self.M.Rh, self.D], -1, device=self.device, dtype=torch.int64)  # [Rh, D]
+        self.z_rm = torch.full([self.M.Rm, self.D], self.M.K, device=self.device, dtype=torch.int64)  # [Rm, D]
+        self.z_rh = torch.full([self.M.Rh, self.D], self.M.K, device=self.device, dtype=torch.int64)  # [Rh, D]
 
         self._tpd = torch.zeros((self.D, self.M.K), device=self.device, dtype=torch.int64)  # [D, K]
         self._nd = torch.zeros(self.D, device=self.device, dtype=torch.int64)               # [D]
@@ -99,8 +99,9 @@ class MCLDA_infer:
                 self.z_rm[rm] = torch.randint(0, self.M.K, [self.D], device=self.device, dtype=torch.int64)
                 self._tpd.index_put_([idx, self.z_rm[rm]], ones, accumulate=True)
         for rh in range(self.M.Rh):
-            self.z_rh[rh] = torch.randint(0, self.M.K, [self.D], device=self.device, dtype=torch.int64)
-            self._tpd.index_put_([idx, self.z_rh[rh]], ones, accumulate=True)
+            if(rh not in self.mask["rh"]):
+                self.z_rh[rh] = torch.randint(0, self.M.K, [self.D], device=self.device, dtype=torch.int64)
+                self._tpd.index_put_([idx, self.z_rh[rh]], ones, accumulate=True)
         self._nd = torch.sum(self._tpd, 1)
 
 
@@ -331,7 +332,7 @@ class MCLDA_infer:
 
 
     def _log_prob_rt(self, rt, theta, idx=None, mean=False):
-        dv = torch.mm(theta, self.M.phi(rt, to_cpu=False))
+        dv = torch.mm(theta, self.M.phi(rt, to_cpu=False))  # [D, V]
         if(idx is None):
             if(not mean):
                 return dv[self.docids_rt[rt], self.wordids_rt[rt]].log().sum().item()
@@ -344,21 +345,25 @@ class MCLDA_infer:
                 return dv[self.docids_rt[rt], self.wordids_rt[rt]][idx].mean().item()
 
 
-
     def _log_prob_rm(self, rm, theta, idx, mean=False):
         mu = self.M.mu(rm, to_cpu=False)
         sigma = self.M.sigma(rm, to_cpu=False)
         x = torch.zeros([self.D, self.M.K], device=self.device, dtype=torch.float64) + self.x_rm[rm][:, None]
-        dk = dist.Normal(mu, sigma).log_prob(x)
+        dk = dist.Normal(mu, sigma).log_prob(x)  # [D, K]
+        # if(not mean):
+        #     return dk[idx, self.z_rm[rm]].sum().item()
+        # else:
+        #     return dk[idx, self.z_rm[rm]].exp().mean().item()
+        dk = theta + dk.exp()
+        d = torch.sum(dk, dim=1)  # [D]  Dのrmを正解する期待値
         if(not mean):
-            # return (theta.log() + dk).sum().item()
-            return dk[idx, self.z_rm[rm]].sum().item()
+            return d[idx].log().sum().item()
         else:
-            return dk[idx, self.z_rm[rm]].exp().mean().item()
+            return d[idx].mean().item()
 
 
     def _log_prob_rh(self, rh, theta, idx, mean=False):
-        dx = torch.mm(theta, self.M.rho(rh, to_cpu=False))
+        dx = torch.mm(theta, self.M.rho(rh, to_cpu=False))  # [D, K] * [K, N] = [D, N]
         if(not mean):
             return dx[idx, self.x_rh[rh]].log().sum().item()
         else:

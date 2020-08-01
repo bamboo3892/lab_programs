@@ -525,7 +525,7 @@ class MCLDA(LDABase):
         for n in range(max_iter):
             probability = self.model_infer.step(num_subsample_partitions)
             losses.append(probability)
-            if(n >= min_iter and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
+            if((n + 1) >= min_iter and np.isclose(sum(losses[-5:]) / 5, losses[-1], rtol=1e-05)):
                 break
 
         if(return_iter):
@@ -534,24 +534,24 @@ class MCLDA(LDABase):
             return self.model_infer.calc_mean_accuracy()
 
 
-    def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions, max_iter=100):
+    def calc_all_mean_accuracy_from_testset(self, num_subsample_partitions, max_iter=100, min_iter=10):
         mean_accuracy = _mask_validate({})
         mean_accuracy["rt_iter"] = []
         mean_accuracy["rm_iter"] = []
         mean_accuracy["rh_iter"] = []
 
         for rt in range(self.Rt):
-            a, n = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter, return_iter=True)
+            a, n = self.calc_mean_accuracy_from_testset({"rt": [rt]}, num_subsample_partitions, max_iter, min_iter, return_iter=True)
             mean_accuracy["rt"].append(a["rt"][0])
             mean_accuracy["rt_iter"].append(n)
 
         for rm in range(self.Rm):
-            a, n = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter, return_iter=True)
+            a, n = self.calc_mean_accuracy_from_testset({"rm": [rm]}, num_subsample_partitions, max_iter, min_iter, return_iter=True)
             mean_accuracy["rm"].append(a["rm"][0])
             mean_accuracy["rm_iter"].append(n)
 
         for rh in range(self.Rh):
-            a, n = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter, return_iter=True)
+            a, n = self.calc_mean_accuracy_from_testset({"rh": [rh]}, num_subsample_partitions, max_iter, min_iter, return_iter=True)
             mean_accuracy["rh"].append(a["rh"][0])
             mean_accuracy["rh_iter"].append(n)
         return mean_accuracy
