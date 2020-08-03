@@ -354,7 +354,7 @@ class MCLDA_infer:
         #     return dk[idx, self.z_rm[rm]].sum().item()
         # else:
         #     return dk[idx, self.z_rm[rm]].exp().mean().item()
-        dk = theta + dk.exp()
+        dk = theta * dk.exp()
         d = torch.sum(dk, dim=1)  # [D]  Dのrmを正解する期待値
         if(not mean):
             return d[idx].log().sum().item()

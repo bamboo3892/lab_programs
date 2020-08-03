@@ -69,7 +69,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 10
+    args.num_steps = 1000
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -80,8 +80,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.coef_beta = 1
     args.coef_alpha = 1
     args.nu_h = 1
-    args.deterministic_coefs = [None] * args.num_steps
-    # args.deterministic_coefs = np.linspace(0., 0.1, args.num_steps).tolist()
+    # args.deterministic_coefs = [None] * args.num_steps
+    args.deterministic_coefs = np.linspace(0., 1, args.num_steps).tolist()
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
@@ -92,8 +92,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_beta:   {args.coef_beta} (auto: {args.auto_beta})")
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
-    _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    # _excute(model_class, args, data, pathResult, summary_args, from_pickle=True, do_hist_analysis=True)
+    # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False, do_hist_analysis=True)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
@@ -133,6 +133,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     fnames = []
     # for seed in range(10):
     for seed in [0]:
+        # for k in [1, 10, 20, 30, 40, 50]:
         for k in np.arange(1, 21):
             Ks.append(k)
             seeds.append(seed)
@@ -158,9 +159,9 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
         process_args.append([model_class, args2, data, pathResult.joinpath(fnames[i]), summary_args2,
                              testset, True, False, False])
     multiprocessing.set_start_method('spawn')
-    with multiprocessing.Pool(processes=4, maxtasksperchild=1) as p:
-        p.starmap(_excute, process_args, chunksize=(len(Ks) - 1) // 4 + 1)
-    pool.join()
+    processes = 3
+    with multiprocessing.Pool(processes=processes, maxtasksperchild=1) as p:
+        p.starmap(_excute, process_args, chunksize=(len(Ks) - 1) // processes + 1)
 
     accuracies_rt = []
     accuracies_rm = []
@@ -291,7 +292,7 @@ def _excute(modelClass, args, data, pathResult, summary_args,
         print("history analysis")
         pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
         _make_colormap_video_from_history(model, history, pathResult.joinpath("figs", "colormaps.mp4"))
-        _make_step_hist_figs(model, history, pathResult.joinpath("figs"), window_size=1)
+        _make_step_hist_figs(model, history, pathResult.joinpath("figs"), window_size=50)
 
 
 def _make_variables_summary_dict(model, habitWorstLevels):

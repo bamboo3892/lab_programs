@@ -10,7 +10,7 @@
             "request": "launch",
             // "program": "${file}",
             "program": "${workspaceFolder}/main_ubuntu.py",
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "sudo": true,
             "justMyCode": false,
