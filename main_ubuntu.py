@@ -375,7 +375,7 @@ if __name__ == '__main__':
         f0 = time.time()
         LDA_pytorch.excute.excuteMCLDA_K_range(morphomes[2], tensors[2],
                                                #    RESULT.joinpath("multi_channel", "torch", "MCLDA", "Ks"),
-                                               Path("Ks"),
+                                               Path("Ks1-20x10"),
                                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
         print("(processed time: {:<.2f})".format(time.time() - f0))
 

@@ -3,8 +3,17 @@ import numpy as np
 
 class Args:
 
-    def __init(self):
+    def __init__(self):
         pass
+
+
+class cycleArray:
+
+    def __init__(self, array):
+        self.array = array
+
+    def __getitem__(self, item):
+        return self.array[item % len(self.array)]
 
 
 def min_max_normalize(x, axis=None):

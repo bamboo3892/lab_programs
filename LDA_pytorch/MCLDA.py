@@ -5,13 +5,16 @@ import scipy
 import torch
 import pyro.distributions as dist
 import openpyxl
-from sklearn import manifold
+from sklearn.manifold import MDS, TSNE
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from LDA_pytorch.ModelBase import LDABase
 from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix, addColorScaleRules, addBorderToMaxCell
 from utils.wordcloud_util import create_wordcloud
+from utils.general_util import cycleArray
 
 
 class MCLDA(LDABase):
@@ -41,7 +44,7 @@ class MCLDA(LDABase):
 
         # fields
         self.args = args
-        self.data = data
+        # self.data = data
         self.device = args.device
 
         self.K = K = args.K
@@ -216,14 +219,15 @@ class MCLDA(LDABase):
         #     assert self._wpt_rt[rt][k, v] == torch.sum(torch.logical_and(self.z_rt[rt] == k, self.wordids_rt[rt] == v))
 
 
-    def _get_z_rt_sampling_probs(self, rt, idx, deterministic_coef=None):
+    def _get_z_rt_sampling_probs(self, rt, idx, deterministic_coef=None, without_theta=False):
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)  # [subsample_size, K]
         a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)     # [subsample_size, K]
         a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rt[rt][idx]] = 1
 
-        probs *= self._wpt_rt[rt][:, self.wordids_rt[rt][idx]].T + self.beta_rt[rt][self.wordids_rt[rt][idx]][:, None] - a
-        probs /= self._wt_rt[rt][None, :] + self.beta_rt[rt].sum() - a
+        if(not without_theta):
+            probs *= self._wpt_rt[rt][:, self.wordids_rt[rt][idx]].T + self.beta_rt[rt][self.wordids_rt[rt][idx]][:, None] - a
+            probs /= self._wt_rt[rt][None, :] + self.beta_rt[rt].sum() - a
         probs *= self._tpd[self.docids_rt[rt][idx], :] + self.alpha[None, :] - a
         probs /= self._nd[self.docids_rt[rt][idx]][:, None] + self.alpha.sum() - a
 
@@ -281,7 +285,7 @@ class MCLDA(LDABase):
         self._std_rm[rm][torch.isnan(self._std_rm[rm])] = 0
 
 
-    def _get_z_rm_sampling_probs(self, rm, idx, deterministic_coef=None):
+    def _get_z_rm_sampling_probs(self, rm, idx, deterministic_coef=None, without_theta=False):
         """
         本来_mean_rmと_std_rmは自分の影響を除いて計算するべきだけど，近似的にかわらないとした
 
@@ -296,12 +300,13 @@ class MCLDA(LDABase):
 
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)                    # [subsample_size, K]
-        a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)                       # [subsample_size, K]
-        a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rm[rm][idx]] = 1
         x = torch.zeros([subsample_size, self.K], device=self.device, dtype=torch.float64) + self.x_rm[rm, idx][:, None]  # [subsample_size, K]
 
-        probs *= self._tpd[idx, :] + self.alpha[None, :] - a
-        probs /= self._nd[idx][:, None] + self.alpha.sum() - a
+        if(not without_theta):
+            a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)                       # [subsample_size, K]
+            a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rm[rm][idx]] = 1
+            probs *= self._tpd[idx, :] + self.alpha[None, :] - a
+            probs /= self._nd[idx][:, None] + self.alpha.sum() - a
 
         # probs *= dist.Normal(self._mean_rm[rm], self._std_rm[rm]).log_prob(x).exp()
 
@@ -360,14 +365,15 @@ class MCLDA(LDABase):
         #     assert self._xpt_rh[rh][k, x] == torch.sum(torch.logical_and(self.z_rh[rh] == k, self.x_rh[rh] == x))
 
 
-    def _get_z_rh_sampling_probs(self, rh, idx, deterministic_coef=None):
+    def _get_z_rh_sampling_probs(self, rh, idx, deterministic_coef=None, without_theta=False):
         subsample_size = len(idx)
         probs = torch.ones((subsample_size, self.K), device=self.device, dtype=torch.float64)  # [subsample_size, K]
         a = torch.zeros((subsample_size, self.K), device=self.device, dtype=torch.float64)     # [subsample_size, K]
         a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rh[rh][idx]] = 1
 
-        probs *= self._xpt_rh[rh][:, self.x_rh[rh, idx]].T + self.rho_h_rh[rh][self.x_rh[rh][idx]][:, None] - a
-        probs /= self._xt_rh[rh][None, :] + self.rho_h_rh[rh].sum() - a
+        if(not without_theta):
+            probs *= self._xpt_rh[rh][:, self.x_rh[rh, idx]].T + self.rho_h_rh[rh][self.x_rh[rh][idx]][:, None] - a
+            probs /= self._xt_rh[rh][None, :] + self.rho_h_rh[rh].sum() - a
         probs *= self._tpd[idx, :] + self.alpha[None, :] - a
         probs /= self._nd[idx][:, None] + self.alpha.sum() - a
 
@@ -409,10 +415,7 @@ class MCLDA(LDABase):
         毎回計算するから何度も呼び出さないこと
         """
         theta = (self._tpd + self.alpha[None, :]) / (self._nd[:, None] + self.alpha.sum())  # [D, K]
-        if(to_cpu):
-            return theta.cpu().detach().numpy().copy()
-        else:
-            return theta
+        return theta.cpu().detach().numpy().copy() if to_cpu else theta
 
 
     def phi(self, rt, to_cpu=True):
@@ -420,10 +423,7 @@ class MCLDA(LDABase):
         毎回計算するから何度も呼び出さないこと
         """
         phi = (self._wpt_rt[rt] + self.beta_rt[rt][None, :]) / (self._wt_rt[rt][:, None] + self.beta_rt[rt].sum())  # [K, V]
-        if(to_cpu):
-            return phi.cpu().detach().numpy().copy()
-        else:
-            return phi
+        return phi.cpu().detach().numpy().copy() if to_cpu else phi
 
 
     def mu(self, rm, to_cpu=True):
@@ -431,10 +431,7 @@ class MCLDA(LDABase):
         mu = self._xt_rm[rm] * self.sigma2_h_rm[rm] * self._mean_rm[rm] + (self._std_rm[rm] ** 2) * self.mu_h_rm[rm]
         mu /= self._xt_rm[rm] * self.sigma2_h_rm[rm] + self._std_rm[rm] ** 2
         mu[torch.isnan(mu)] = self.mu_h_rm[rm]
-        if(to_cpu):
-            return mu.cpu().detach().numpy().copy()
-        else:
-            return mu
+        return mu.cpu().detach().numpy().copy() if to_cpu else mu
 
 
     def sigma(self, rm, to_cpu=True):
@@ -442,10 +439,7 @@ class MCLDA(LDABase):
         # var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm] - 2)
         var = (self.nu_h_rm * self.sigma2_h_rm[rm] + self._xt_rm[rm] * self._std_rm[rm] ** 2) / (self.nu_h_rm + self._xt_rm[rm])
         sigma = torch.pow(var, 0.5)
-        if(to_cpu):
-            return sigma.cpu().detach().numpy().copy()
-        else:
-            return sigma
+        return sigma.cpu().detach().numpy().copy() if to_cpu else sigma
 
 
     def rho(self, rh, to_cpu=True):
@@ -453,10 +447,7 @@ class MCLDA(LDABase):
         毎回計算するから何度も呼び出さないこと
         """
         rho = (self._xpt_rh[rh] + self.rho_h_rh[rh][None, :]) / (self._xt_rh[rh][:, None] + self.rho_h_rh[rh].sum())  # [K, n_rh]
-        if(to_cpu):
-            return rho.cpu().detach().numpy().copy()
-        else:
-            return rho
+        return rho.cpu().detach().numpy().copy() if to_cpu else rho
 
 
     def getWorstAnswerProbs(self, habitWorstLevels, rhos=None):
@@ -566,48 +557,39 @@ class MCLDA(LDABase):
 
 
     def _sammary_figs(self, summary_args):
-        # theta = self.theta().T
-        # theta = (theta - theta.mean(axis=1)[:, None]) / theta.std(axis=1)[:, None]
+        p = summary_args.summary_path.joinpath("figs", "mapping")
+        p.mkdir(exist_ok=True, parents=True)
 
-        # cor = np.corrcoef(theta)
-        # cos = np.zeros((self.K, self.K))
-        # norm = np.linalg.norm(theta, ord=2, axis=1)
-        # for k in range(self.K):
-        #     cos[k, :] = np.dot(theta, theta[k]) / norm / norm[k]
+        theta = self.theta()
+        x_rm = self.x_rm.cpu().detach().numpy().copy()
 
-        # p = summary_args.summary_path.joinpath("figs")
-        # p.mkdir(exist_ok=True, parents=True)
+        clist = cycleArray(np.array(['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
+                                     'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']))
+        deta_colors = clist[np.argmax(theta, axis=1)]
+        handles = [mpatches.Patch(color=clist[k], label=f"topic{k+1}") for k in range(self.K)]
 
-        # mds = manifold.MDS(n_components=2, metric=True, dissimilarity="precomputed", random_state=6)
-        # pos = mds.fit_transform(cor)
-        # plt.scatter(pos[:, 0], pos[:, 1])
-        # for k in range(self.K):
-        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        # plt.savefig(p.joinpath("mds_metric_cor_.png"))
-        # plt.clf()
+        # mds_metric = MDS(n_components=2, metric=True, dissimilarity="precomputed", random_state=1)
+        # mds_nonmetric = MDS(n_components=2, metric=False, dissimilarity="precomputed", random_state=1)
+        pca = PCA(n_components=2)
+        tsne = TSNE(n_components=2, random_state=1)
 
-        # pos = mds.fit_transform(cos)
-        # plt.scatter(pos[:, 0], pos[:, 1])
-        # for k in range(self.K):
-        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        # plt.savefig(p.joinpath("mds_metric_cos.png"))
-        # plt.clf()
+        # self._make_map(pca, theta, p.joinpath("docs_mapping_by_pca.png"), deta_colors=deta_colors)
+        self._make_map(tsne, theta, p.joinpath("docs_mapping_by_tsne.png"), deta_colors=deta_colors, handles=handles)
+        self._make_map(tsne, x_rm.T, p.joinpath("num_data_mapping_by_tsne.png"))
+        self._make_map(pca, x_rm.T, p.joinpath("num_data_mapping_by_pca.png"))
 
-        # mds = manifold.MDS(n_components=2, metric=False, dissimilarity="precomputed", random_state=6)
-        # pos = mds.fit_transform(cor)
-        # plt.scatter(pos[:, 0], pos[:, 1])
-        # for k in range(self.K):
-        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        # plt.savefig(p.joinpath("mds_nonmetric_cor.png"))
-        # plt.clf()
 
-        # pos = mds.fit_transform(cos)
-        # plt.scatter(pos[:, 0], pos[:, 1])
-        # for k in range(self.K):
-        #     plt.annotate(f"Topic{k+1}", xy=(pos[k, 0], pos[k, 1]))
-        # plt.savefig(p.joinpath("mds_nonmetric_cos.png"))
-        # plt.clf()
-        pass
+    def _make_map(self, model, x, path, data_names=None, deta_colors=None, title=None, handles=None):
+        pos = model.fit_transform(x)
+        plt.scatter(pos[:, 0], pos[:, 1], c=deta_colors)
+        if(data_names is not None):
+            for n in range(pos.shape[0]):
+                plt.annotate(data_names[n], xy=(pos[n, 0], pos[n, 1]))
+        plt.title(title)
+        if(handles is not None):
+            plt.legend(handles=handles)
+        plt.savefig(path)
+        plt.clf()
 
 
     def _summary_to_excel(self, summary_args, wb):
@@ -646,6 +628,19 @@ class MCLDA(LDABase):
         writeVector(ws, [torch.sum(self._tpd[:, k]).item() for k in range(self.K)],
                     self.Rt + self.Rm + self.Rh + 5, 2,
                     rule="databar")
+
+        ws = wb.create_sheet("core_values")
+        rtn_rt, rtn_rm, rtn_rh = self._get_topic_core_values()
+        writeMatrix(ws, rtn_rt, 1, 1,
+                    row_names=summary_args.full_tensors["tensor_keys"],
+                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    rule="colorscale", ruleAxis="row")
+        writeMatrix(ws, rtn_rm, self.Rt + 3, 1,
+                    row_names=summary_args.full_tensors["measurement_keys"],
+                    rule="colorscale", ruleAxis="row")
+        writeMatrix(ws, rtn_rh, self.Rt + self.Rm + 4, 1,
+                    row_names=summary_args.full_tensors["habit_keys"],
+                    rule="colorscale", ruleAxis="row")
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,
@@ -729,3 +724,27 @@ class MCLDA(LDABase):
 
         wb.remove_sheet(tmp_ws)
         wb.save(summary_args.summary_path.joinpath("topics.xlsx"))
+
+
+    def _get_topic_core_values(self):
+        rtn_rt = np.zeros((self.Rt, self.K))
+        rtn_rm = np.zeros((self.Rm, self.K))
+        rtn_rh = np.zeros((self.Rh, self.K))
+
+        for k in range(self.K):
+            for rt in range(self.Rt):
+                idx = torch.nonzero(self.z_rt[rt] == k, as_tuple=False)[:, 0]
+                probs = self._get_z_rt_sampling_probs(rt, idx, without_theta=True)
+                rtn_rt[rt, k] = probs[:, k].mean().item()
+
+            for rm in range(self.Rm):
+                idx = torch.nonzero(self.z_rm[rm] == k, as_tuple=False)[:, 0]
+                probs = self._get_z_rm_sampling_probs(rm, idx, without_theta=True)
+                rtn_rm[rm, k] = probs[:, k].mean().item()
+
+            for rh in range(self.Rh):
+                idx = torch.nonzero(self.z_rh[rh] == k, as_tuple=False)[:, 0]
+                probs = self._get_z_rh_sampling_probs(rh, idx, without_theta=True)
+                rtn_rh[rh, k] = probs[:, k].mean().item()
+
+        return rtn_rt, rtn_rm, rtn_rh

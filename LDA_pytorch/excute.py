@@ -7,6 +7,7 @@ import openpyxl
 import cv2
 import multiprocessing
 import copy
+import psutil
 
 from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2, medicineLevels, medicineWorstLevels
 import LDA_pytorch.LDA as LDA
@@ -69,7 +70,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 1000
+    args.num_steps = 200
     args.step_subsample = 10
     args.K = 10
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -80,8 +81,9 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.coef_beta = 1
     args.coef_alpha = 1
     args.nu_h = 1
+    args.deterministic_coefs = [None]
     # args.deterministic_coefs = [None] * args.num_steps
-    args.deterministic_coefs = np.linspace(0., 1, args.num_steps).tolist()
+    # args.deterministic_coefs = np.linspace(0., 1, args.num_steps).tolist()
 
     summary_args.full_docs = documents
     summary_args.full_tensors = tensors
@@ -93,7 +95,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False, do_hist_analysis=True)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=True, do_hist_analysis=False)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
@@ -131,8 +133,8 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     Ks = []
     seeds = []
     fnames = []
-    # for seed in range(10):
-    for seed in [0]:
+    # for seed in [0]:
+    for seed in range(10):
         # for k in [1, 10, 20, 30, 40, 50]:
         for k in np.arange(1, 21):
             Ks.append(k)
@@ -155,13 +157,13 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
         args2 = copy.deepcopy(args)
         args2.K = Ks[i]
         args2.random_seed = seeds[i]
-        summary_args2 = copy.deepcopy(summary_args)
-        process_args.append([model_class, args2, data, pathResult.joinpath(fnames[i]), summary_args2,
-                             testset, True, False, False])
+        process_args.append([model_class, args2, data, pathResult.joinpath(fnames[i]), summary_args,
+                             testset, False, False, True])
     multiprocessing.set_start_method('spawn')
-    processes = 3
-    with multiprocessing.Pool(processes=processes, maxtasksperchild=1) as p:
-        p.starmap(_excute, process_args, chunksize=(len(Ks) - 1) // processes + 1)
+    psutil.Process().nice(-20)
+    processes = 4
+    with multiprocessing.Pool(processes=processes, maxtasksperchild=None) as p:
+        p.starmap(_excute, process_args)
 
     accuracies_rt = []
     accuracies_rm = []

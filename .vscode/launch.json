@@ -13,7 +13,7 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "sudo": true,
-            "justMyCode": false,
+            "justMyCode": true,
         },
         {
             "name": "Python: Attach",
