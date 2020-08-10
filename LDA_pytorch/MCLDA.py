@@ -226,10 +226,10 @@ class MCLDA(LDABase):
         a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rt[rt][idx]] = 1
 
         if(not without_theta):
-            probs *= self._wpt_rt[rt][:, self.wordids_rt[rt][idx]].T + self.beta_rt[rt][self.wordids_rt[rt][idx]][:, None] - a
-            probs /= self._wt_rt[rt][None, :] + self.beta_rt[rt].sum() - a
-        probs *= self._tpd[self.docids_rt[rt][idx], :] + self.alpha[None, :] - a
-        probs /= self._nd[self.docids_rt[rt][idx]][:, None] + self.alpha.sum() - a
+            probs *= self._tpd[self.docids_rt[rt][idx], :] + self.alpha[None, :] - a
+            probs /= self._nd[self.docids_rt[rt][idx]][:, None] + self.alpha.sum() - a
+        probs *= self._wpt_rt[rt][:, self.wordids_rt[rt][idx]].T + self.beta_rt[rt][self.wordids_rt[rt][idx]][:, None] - a
+        probs /= self._wt_rt[rt][None, :] + self.beta_rt[rt].sum() - a
 
         """ calculation checking """
         # for i in range(100):
@@ -372,10 +372,10 @@ class MCLDA(LDABase):
         a[torch.arange(0, subsample_size, device=self.device, dtype=torch.int64), self.z_rh[rh][idx]] = 1
 
         if(not without_theta):
-            probs *= self._xpt_rh[rh][:, self.x_rh[rh, idx]].T + self.rho_h_rh[rh][self.x_rh[rh][idx]][:, None] - a
-            probs /= self._xt_rh[rh][None, :] + self.rho_h_rh[rh].sum() - a
-        probs *= self._tpd[idx, :] + self.alpha[None, :] - a
-        probs /= self._nd[idx][:, None] + self.alpha.sum() - a
+            probs *= self._tpd[idx, :] + self.alpha[None, :] - a
+            probs /= self._nd[idx][:, None] + self.alpha.sum() - a
+        probs *= self._xpt_rh[rh][:, self.x_rh[rh, idx]].T + self.rho_h_rh[rh][self.x_rh[rh][idx]][:, None] - a
+        probs /= self._xt_rh[rh][None, :] + self.rho_h_rh[rh].sum() - a
 
         """ calculation checking """
         # for i in range(100):

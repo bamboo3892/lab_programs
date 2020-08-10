@@ -79,10 +79,10 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.auto_beta = False
     args.auto_alpha = False
     args.coef_beta = 1
-    args.coef_alpha = 1
+    args.coef_alpha = 0.1
     args.nu_h = 1
-    args.deterministic_coefs = [None]
-    # args.deterministic_coefs = [None] * args.num_steps
+    # args.deterministic_coefs = [None]
+    args.deterministic_coefs = [None] * args.num_steps
     # args.deterministic_coefs = np.linspace(0., 1, args.num_steps).tolist()
 
     summary_args.full_docs = documents
@@ -95,7 +95,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=True, do_hist_analysis=False)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False, do_hist_analysis=False)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
