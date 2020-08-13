@@ -9,12 +9,14 @@ from sklearn.manifold import MDS, TSNE
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import itertools
 
 from LDA_pytorch.ModelBase import LDABase
 from LDA_pytorch.MCLDA_infer import MCLDA_infer, _mask_validate
 from utils.openpyxl_util import writeMatrix, writeVector, writeSortedMatrix, addColorScaleRules, addBorderToMaxCell
 from utils.wordcloud_util import create_wordcloud
 from utils.general_util import cycleArray
+from utils.probability_util import calc_JSdivergence_for_gaussian, calc_JSdivergence_for_multinomial
 
 
 class MCLDA(LDABase):
@@ -491,6 +493,34 @@ class MCLDA(LDABase):
         pass
 
 
+    def get_topic_divergence(self, modal, r):
+        """
+        modal: "rt" or "rm" or "rh"
+        r: record id
+
+        Returns tensor [K, K]
+        """
+        rtn = np.zeros((self.K, self.K))
+
+        if(modal == "rt"):
+            phi = self.phi(r)
+            for k in itertools.combinations(range(self.K), 2):
+                rtn[k] = calc_JSdivergence_for_multinomial(phi[k[0]], phi[k[1]])
+
+        elif(modal == "rm"):
+            mu = self.mu(r)
+            sigma = self.sigma(r)
+            for k in itertools.combinations(range(self.K), 2):
+                rtn[k] = calc_JSdivergence_for_gaussian(mu[k[0]], sigma[k[0]], mu[k[1]], sigma[k[1]])
+
+        elif(modal == "rh"):
+            rho = self.rho(r)
+            for k in itertools.combinations(range(self.K), 2):
+                rtn[k] = calc_JSdivergence_for_multinomial(rho[k[0]], rho[k[1]])
+
+        return rtn
+
+
     def set_testset(self, testset):
         self.model_infer = MCLDA_infer(self, testset, {})
 
@@ -602,6 +632,7 @@ class MCLDA(LDABase):
         sigma = [self.sigma(rm) for rm in range(self.Rm)]
         rho = [self.rho(rh) for rh in range(self.Rh)]
         rho_h = [self.rho_h_rh[rh].cpu().detach().numpy().copy() for rh in range(self.Rh)]
+        topic_names = [f"topic{k}" for k in range(self.K)]
 
         args_dict = {k: self.args.__dict__[k] for k in self.args.__dict__ if not k.startswith("__")}
         args_dict_str = args_dict.copy()
@@ -615,7 +646,7 @@ class MCLDA(LDABase):
         writeMatrix(ws, [[self._wt_rt[r][k].item() for k in range(self.K)] for r in range(self.Rt)],
                     1, 1,
                     row_names=summary_args.full_tensors["tensor_keys"],
-                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    column_names=topic_names,
                     rule="databar")
         writeMatrix(ws, [[self._xt_rm[r][k].item() for k in range(self.K)] for r in range(self.Rm)],
                     self.Rt + 3, 1,
@@ -633,25 +664,41 @@ class MCLDA(LDABase):
         rtn_rt, rtn_rm, rtn_rh = self._get_topic_core_values()
         writeMatrix(ws, rtn_rt, 1, 1,
                     row_names=summary_args.full_tensors["tensor_keys"],
-                    column_names=[f"topic{k+1}" for k in range(self.K)],
-                    rule="colorscale", ruleAxis="row")
+                    column_names=topic_names)
         writeMatrix(ws, rtn_rm, self.Rt + 3, 1,
-                    row_names=summary_args.full_tensors["measurement_keys"],
-                    rule="colorscale", ruleAxis="row")
+                    row_names=summary_args.full_tensors["measurement_keys"])
         writeMatrix(ws, rtn_rh, self.Rt + self.Rm + 4, 1,
-                    row_names=summary_args.full_tensors["habit_keys"],
-                    rule="colorscale", ruleAxis="row")
+                    row_names=summary_args.full_tensors["habit_keys"])
+        addColorScaleRules(ws, 2, self.Rt + self.Rm + self.Rh + 5, 2, self.K + 1, axis=None)
+
+        ws = wb.create_sheet("topic_divergence")
+        row = 1
+        for rt in range(self.Rt):
+            ws.cell(row, 1, f"rt={rt}")
+            writeMatrix(ws, self.get_topic_divergence("rt", rt), row + 1, 1,
+                        row_names=topic_names, column_names=topic_names, rule="colorscale")
+            row += self.K + 3
+        for rm in range(self.Rm):
+            ws.cell(row, 1, f"rm={rm}")
+            writeMatrix(ws, self.get_topic_divergence("rm", rm), row + 1, 1,
+                        row_names=topic_names, column_names=topic_names, rule="colorscale")
+            row += self.K + 3
+        for rh in range(self.Rh):
+            ws.cell(row, 1, f"rh={rh}")
+            writeMatrix(ws, self.get_topic_divergence("rh", rh), row + 1, 1,
+                        row_names=topic_names, column_names=topic_names, rule="colorscale")
+            row += self.K + 3
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,
                     row_names=summary_args.full_tensors["measurement_keys"],
-                    column_names=[f"topic{k+1}" for k in range(self.K)])
+                    column_names=topic_names)
         writeVector(ws, self.mu_h_rm.cpu().detach().numpy(), 2, self.K + 3, axis="row")
         addColorScaleRules(ws, 2, self.Rm + 1, 2, self.K + 3, axis="column")
         addBorderToMaxCell(ws, 2, self.Rm + 1, 2, self.K + 1, axis="column")
         writeMatrix(ws, sigma, 1, self.K + 5,
                     row_names=summary_args.full_tensors["measurement_keys"],
-                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    column_names=topic_names,
                     rule="colorscale", ruleAxis="column")
         writeVector(ws, self.sigma2_h_rm.pow(0.5).cpu().detach().numpy(), 2, 2 * self.K + 7, axis="row")
         addColorScaleRules(ws, 2, self.Rm + 1, self.K + 6, 2 * self.K + 7, axis="column")
@@ -662,7 +709,7 @@ class MCLDA(LDABase):
             ws.cell(row, 1, summary_args.full_tensors["habit_keys"][r])
             writeMatrix(ws, rho[r].T, row, 1,
                         row_names=summary_args.full_tensors["habit_levels"][r],
-                        column_names=[f"topic{k+1}" for k in range(self.K)],
+                        column_names=topic_names,
                         rule="databar", ruleBoundary=[0., 1.])
             _, counts = torch.unique(self.x_rh[r], return_counts=True)
             counts = counts.cpu().detach().numpy()
@@ -679,7 +726,7 @@ class MCLDA(LDABase):
         addBorderToMaxCell(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
 
         ws = wb.create_sheet("alpha_hyper")
-        writeVector(ws, alpha, axis="row", names=[f"topic{k+1}" for k in range(self.K)],
+        writeVector(ws, alpha, axis="row", names=topic_names,
                     rule="databar")
 
         ws = wb.create_sheet("beta_hyper")
@@ -691,22 +738,22 @@ class MCLDA(LDABase):
         ws = wb.create_sheet("theta")
         writeMatrix(ws, theta, 1, 1,
                     row_names=[f"doc{d+1}" for d in range(self.D)],
-                    column_names=[f"topic{k+1}" for k in range(self.K)],
+                    column_names=topic_names,
                     rule="databar", ruleBoundary=[0., 1.])
 
         for r in range(self.Rt):
             ws = wb.create_sheet(f"phi_r{r}")
             writeMatrix(ws, phi[r].T, 1, 1,
                         row_names=self.word_dict_rt[r],
-                        column_names=[f"topic{k+1}" for k in range(self.K)],
+                        column_names=topic_names,
                         rule="databar")
 
             ws = wb.create_sheet(f"phi_r{r}_sorted")
             writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=1,
-                              row_names=self.word_dict_rt[r], column_names=[f"topic{k+1}" for k in range(self.K)],
+                              row_names=self.word_dict_rt[r], column_names=topic_names,
                               maxwrite=100, order="higher")
             writeSortedMatrix(ws, phi[r].T, axis=0, row=1, column=self.K + 3,
-                              row_names=None, column_names=[f"topic{k+1}" for k in range(self.K)],
+                              row_names=None, column_names=topic_names,
                               maxwrite=100, order="higher",
                               rule="databar")
 
@@ -734,17 +781,17 @@ class MCLDA(LDABase):
         for k in range(self.K):
             for rt in range(self.Rt):
                 idx = torch.nonzero(self.z_rt[rt] == k, as_tuple=False)[:, 0]
-                probs = self._get_z_rt_sampling_probs(rt, idx, without_theta=True)
+                probs = self._get_z_rt_sampling_probs(rt, idx, without_theta=False)
                 rtn_rt[rt, k] = probs[:, k].mean().item()
 
             for rm in range(self.Rm):
                 idx = torch.nonzero(self.z_rm[rm] == k, as_tuple=False)[:, 0]
-                probs = self._get_z_rm_sampling_probs(rm, idx, without_theta=True)
+                probs = self._get_z_rm_sampling_probs(rm, idx, without_theta=False)
                 rtn_rm[rm, k] = probs[:, k].mean().item()
 
             for rh in range(self.Rh):
                 idx = torch.nonzero(self.z_rh[rh] == k, as_tuple=False)[:, 0]
-                probs = self._get_z_rh_sampling_probs(rh, idx, without_theta=True)
+                probs = self._get_z_rh_sampling_probs(rh, idx, without_theta=False)
                 rtn_rh[rh, k] = probs[:, k].mean().item()
 
         return rtn_rt, rtn_rm, rtn_rh
