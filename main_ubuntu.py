@@ -94,18 +94,23 @@ if __name__ == '__main__':
         #                            ORIGINAL.joinpath("furikaeri_k_id_50117.csv"),
         #                            ORIGINAL.joinpath("新プログラムで登録した人リスト.csv"),
         #                            FORMED.joinpath("sompo.json"))
+        # formReviewToJson.formSOMPO(ORIGINAL.joinpath("Original_data_SOMPO_20180927.csv"),
+        #                            ORIGINAL.joinpath("furikaeri_k_id_50117.csv"),
+        #                            ORIGINAL.joinpath("新プログラムで登録した人リスト.csv"),
+        #                            FORMED.joinpath("sompo_message.json"),
+        #                            textLabel="ano_p_r_message")
         formReviewToJson.formSOMPO(ORIGINAL.joinpath("Original_data_SOMPO_20180927.csv"),
                                    ORIGINAL.joinpath("furikaeri_k_id_50117.csv"),
                                    ORIGINAL.joinpath("新プログラムで登録した人リスト.csv"),
-                                   FORMED.joinpath("sompo_message.json"),
-                                   textLabel="ano_p_r_message")
+                                   FORMED.joinpath("sompo_first.json"),
+                                   firstGuidanceOnly=True)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b1):
         f0 = time.time()
         # sepReviewsToMorphomes.sepReviews(FORMED.joinpath("sompo.json"),
         #                                  MORPHOMES.joinpath("sompo1_10000.json"),
-        #                                  textKey="p_r_tgtset_explan",
+        #                                  TextKey="p_r_tgtset_explan",
         #                                  blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
         #                                  blackWord=["量", "称賛", "ため", "為", "改善", "目標", "説明", "確認"],
         #                                  removeRateFromBtm=0.05, removeRateFromTop=0.15,
@@ -143,6 +148,27 @@ if __name__ == '__main__':
         #                                  removeRateFromBtm=0.03, removeRateFromTop=0.15,
         #                                  minWordsInSentence=2)
 
+        # first only (テストセットはトレーニングセットと上から禁止する語彙を同じにした)
+        sepReviewsToMorphomes.sepReviews(FORMED.joinpath("sompo_first.json"),
+                                         MORPHOMES.joinpath("sompo_first_10000_1.json"),
+                                         inputTextKey="p_r_tgtset_explan",
+                                         outputTextKey="p_r_tgtset_explan_morphomes",
+                                         blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
+                                         blackWord=["量", "称賛", "ため", "為", "改善", "目標", "説明", "確認"],
+                                         removeRateFromBtm=0.03, removeRateFromTop=0.15,
+                                         nDocument=10000, startIndex=0,
+                                         minWordsInSentence=2)
+        sepReviewsToMorphomes.sepReviews(FORMED.joinpath("sompo_first.json"),
+                                         MORPHOMES.joinpath("sompo_first_10000_2.json"),
+                                         inputTextKey="p_r_tgtset_explan",
+                                         outputTextKey="p_r_tgtset_explan_morphomes",
+                                         blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
+                                         blackWord=["こと", "説明", "体重", "量", "事", "よう",
+                                                    "量", "称賛", "ため", "為", "改善", "目標", "説明", "確認"],
+                                         removeRateFromBtm=0.03, removeRateFromTop=0.0,
+                                         nDocument=10000, startIndex=10000,
+                                         minWordsInSentence=2)
+
         # message
         # sepReviewsToMorphomes.sepReviews(FORMED.joinpath("sompo_message.json"),
         #                                  MORPHOMES.joinpath("sompo_message.json"),
@@ -154,6 +180,7 @@ if __name__ == '__main__':
         #                                             "おる", "思う", "みる", "日", "できる", "時", "中"],
         #                                  removeRateFromBtm=0.03, removeRateFromTop=0.0,
         #                                  minWordsInSentence=2)
+
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b2):
@@ -302,33 +329,34 @@ if __name__ == '__main__':
     forder = MORPHOMES.joinpath("multi_channel")
     input_ = [MORPHOMES.joinpath("sompo_full003.json"), MORPHOMES.joinpath("sompo_full005.json"),
               MORPHOMES.joinpath("sompo1_10000.json"), MORPHOMES.joinpath("sompo2_10000.json"),
-              MORPHOMES.joinpath("sompo1_30000.json"), MORPHOMES.joinpath("sompo2_30000.json")]
+              MORPHOMES.joinpath("sompo1_30000.json"), MORPHOMES.joinpath("sompo2_30000.json"),
+              MORPHOMES.joinpath("sompo_first_10000_1.json"), MORPHOMES.joinpath("sompo_first_10000_2.json")]
     morphomes = [forder.joinpath("multi_full003.json"), forder.joinpath("multi_full005.json"),
                  forder.joinpath("multi1_10000.json"), forder.joinpath("multi2_10000.json"),
-                 forder.joinpath("multi1_30000.json"), forder.joinpath("multi2_30000.json")]
+                 forder.joinpath("multi1_30000.json"), forder.joinpath("multi2_30000.json"),
+                 forder.joinpath("multi_first_10000_1.json"), forder.joinpath("multi_first_10000_2.json")]
+    # input_ = [MORPHOMES.joinpath("sompo_first_10000_1.json"), MORPHOMES.joinpath("sompo_first_10000_2.json")]
+    # morphomes = [forder.joinpath("multi_first_10000_1.json"), forder.joinpath("multi_first_10000_2.json")]
     tensors = [TENSOR.joinpath("multi_channel", a.stem + ".pickle") for a in morphomes]
-    # input_ = [MORPHOMES.joinpath("sompo1_10000.json")]
-    # output = [forder.joinpath("multi1_10000.json")]
 
     if(b16):
         f0 = time.time()
-        print("Start separating reviews to morphomes")
-        # for m in range(len(input_)):
-        m = 0
-        shutil.copyfile(input_[m], morphomes[m])
-        for n in range(len(MULTI_CHANNEL_KEYS)):
-            print("")
-            sepReviewsToMorphomes.sepReviews(morphomes[m],
-                                             morphomes[m],
-                                             intputTextKey=MULTI_CHANNEL_KEYS[n],
-                                             outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
-                                             blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
-                                             blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
-                                                        "こと", "もの", "事", "よう", "ため", "の", "そう"],
-                                             removeRateFromBtm=(0.03 if m != 1 else 0.05),
-                                             removeRateFromTop=0.15,
-                                             minWordsInSentence=0)
-        print("(processed time: {:<.2f})".format(time.time() - f0))
+        for m in range(len(input_)):
+            shutil.copyfile(input_[m], morphomes[m])
+            for n in range(len(MULTI_CHANNEL_KEYS)):
+                print("")
+                sepReviewsToMorphomes.sepReviews(morphomes[m],
+                                                 morphomes[m],
+                                                 inputTextKey=MULTI_CHANNEL_KEYS[n],
+                                                 outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
+                                                 blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
+                                                 blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
+                                                            "こと", "もの", "事", "よう", "ため", "の", "そう"],
+                                                 removeRateFromBtm=(0.03 if m != 1 else 0.05),
+                                                 #  removeRateFromBtm=(0.05),
+                                                 removeRateFromTop=0.15,
+                                                 minWordsInSentence=0)
+            print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b17):
         f0 = time.time()
@@ -366,9 +394,12 @@ if __name__ == '__main__':
 
     if(b25):
         f0 = time.time()
-        LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
-                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
-                                       pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+        # LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
+        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "K8 step200 seed1"),
+        #                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+        LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
+                                       pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b26):

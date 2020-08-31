@@ -96,7 +96,8 @@ def formGolfReview(pathOriginal, pathFormed):
     print("Finish forming golf reviews to json")
 
 
-def formSOMPO(pathOriginal, pathFurikaeri, pathNewProgram, pathFormed, textLabel="p_r_tgtset_explan"):
+def formSOMPO(pathOriginal, pathFurikaeri, pathNewProgram, pathFormed,
+              textLabel="p_r_tgtset_explan", firstGuidanceOnly=False):
     """
     Remove new program person and add "p_r_fkr_seqs_id" to corresponding "fkr_category" id.
     Added elements:
@@ -117,13 +118,22 @@ def formSOMPO(pathOriginal, pathFurikaeri, pathNewProgram, pathFormed, textLabel
         a0 = label.index("p_r_fkr_seqs")
         a1 = label.index("m_id")
         a2 = label.index(textLabel)
+        a3 = label.index("p_num")
         for n, row in enumerate(spamreader):
             # if(n > 100):
             #     break
+
+            # 新プログラムの人を除く
             n0 = int(row[a1])
             if(n0 in newProgram or row[a2] is None or row[a2] == ""):
                 nNew += 1
                 continue
+
+            if(firstGuidanceOnly):
+                # 初回以外を除く
+                if(row[a3] != "1"):
+                    continue
+
             review = {}
             for i in range(len(label)):
                 if(label[i] != "" and len(row[i]) != 0):

@@ -17,7 +17,7 @@ SEP_CHARS = ["。", "!", "！", "．", "."]
 
 
 def sepReviews(pathFormed, pathMorphomes, *,
-               intputTextKey,
+               inputTextKey,
                outputTextKey,
                sepChars=SEP_CHARS,
                blacklist=None, whitelist=None,
@@ -57,9 +57,9 @@ def sepReviews(pathFormed, pathMorphomes, *,
             if(nDocument < 0 or (startIndex <= index and index < startIndex + nDocument)):
                 document = []
                 sentence = []
-                if(intputTextKey not in review):
-                    review[intputTextKey] = ""
-                words = mecab.parse(review[intputTextKey]).split("\n")
+                if(inputTextKey not in review):
+                    review[inputTextKey] = ""
+                words = mecab.parse(review[inputTextKey]).split("\n")
                 for word in words:
                     if(len(word) >= 4):
                         morphome = word.split("\t")[2]
