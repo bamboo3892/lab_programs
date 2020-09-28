@@ -40,13 +40,17 @@ ANALYSIS_HEALTH_CHECK = DATA_FOLDER.joinpath("analysis_healthcheck")
 
 DICTIONARY = Path(__file__).absolute().parent.parent.joinpath("data").joinpath("dictionarys")
 
-MULTI_CHANNEL_KEYS = ["p_r_explan_iyoku", "p_r_exer", "p_r_other_text",
-                      "p_r_drink_text", "p_r_snack_text", "p_r_sake_text", "p_r_sleep_text", "p_r_other"]
 HC_MEASUREMENT_KEYS = analysis.analyzeHealthCheck.dataLabels
 HC_HABIT_KEYS = analysis.analyzeHealthCheck.habitLabels
 HC_MEDICINE_KEYS = analysis.analyzeHealthCheck.medicineLabels
 HC_HABIT_LEVELS = analysis.analyzeHealthCheck.habitLevels2
 HC_MEDICINE_LEVELS = analysis.analyzeHealthCheck.medicineLevels
+
+MC_TEXT_KEYS_FOR_TYPE = ["p_r_explan_iyoku", "p_r_exer", "p_r_other_text",
+                         "p_r_drink_text", "p_r_snack_text", "p_r_sake_text", "p_r_sleep_text", "p_r_other"]
+MC_TEXT_KEYS_FOR_DIRECTION = ["p_r_tgtset_explan"]
+MULTI_CHANNEL_KEYS = MC_TEXT_KEYS_FOR_TYPE + MC_TEXT_KEYS_FOR_DIRECTION
+
 
 if __name__ == '__main__':
 
@@ -77,7 +81,8 @@ if __name__ == '__main__':
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
-    b25 = True  # excute MCLDA (torch)
+    b25 = False  # excute MCLDA for type(torch)
+    b27 = True  # excute MCLDA for direction(torch)
     b26 = False  # excute MCLDA for each K (torch)
 
     b11 = False  # HC statistics
@@ -343,17 +348,17 @@ if __name__ == '__main__':
         f0 = time.time()
         for m in range(len(input_)):
             shutil.copyfile(input_[m], morphomes[m])
-            for n in range(len(MULTI_CHANNEL_KEYS)):
+            for n in range(len(MC_TEXT_KEYS_FOR_TYPE)):
                 print("")
                 sepReviewsToMorphomes.sepReviews(morphomes[m],
                                                  morphomes[m],
-                                                 inputTextKey=MULTI_CHANNEL_KEYS[n],
-                                                 outputTextKey=MULTI_CHANNEL_KEYS[n] + "_morphomes",
+                                                 inputTextKey=MC_TEXT_KEYS_FOR_TYPE[n],
+                                                 outputTextKey=MC_TEXT_KEYS_FOR_TYPE[n] + "_morphomes",
                                                  blacklist=r"(名詞-数)", whitelist=r"(^名詞)",
                                                  blackWord=["～", "(", ")", "/", "~", "+", "-", ",", "－", "⇒",
                                                             "こと", "もの", "事", "よう", "ため", "の", "そう"],
-                                                 removeRateFromBtm=(0.03 if m != 1 else 0.05),
-                                                 #  removeRateFromBtm=(0.05),
+                                                 #  removeRateFromBtm=(0.03 if m != 1 else 0.05),
+                                                 removeRateFromBtm=0.03,
                                                  removeRateFromTop=0.15,
                                                  minWordsInSentence=0)
             print("(processed time: {:<.2f})".format(time.time() - f0))
@@ -397,9 +402,19 @@ if __name__ == '__main__':
         # LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
         #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "K8 step200 seed1"),
         #                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+        # LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
+        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
+        #                                pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
-                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
                                        pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b27):
+        f0 = time.time()
+        LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "tmp"),
+                                       pathTestdocs=morphomes[7], pathTesttensors=tensors[7], forDerection=True)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b26):

@@ -9,7 +9,9 @@ import multiprocessing
 import copy
 import psutil
 
+from main_ubuntu import MC_TEXT_KEYS_FOR_TYPE, MC_TEXT_KEYS_FOR_DIRECTION
 from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2, medicineLevels, medicineWorstLevels
+from analysis.analyzeResult import DICT0
 import LDA_pytorch.LDA as LDA
 import LDA_pytorch.MCLDA as MCLDA
 from utils.general_util import Args, min_max_normalize, simple_moving_average
@@ -55,16 +57,30 @@ def excuteLDA(pathDocs, pathResult, *,
 
 def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
                 args=None, summary_args=None,
-                pathTestdocs=None, pathTesttensors=None):
+                pathTestdocs=None, pathTesttensors=None, forDerection=False):
 
     args = args if args is not None else Args()
     summary_args = summary_args if summary_args is not None else Args()
 
     include_medicine = False
-    documents, tensors, data = _make_data_1(pathDocs, pathTensors, include_medicine=include_medicine)
-    testset = None
-    if(pathTestdocs is not None and pathTesttensors is not None):
-        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors, include_medicine=include_medicine)
+    if(not forDerection):
+        documents, tensors, data = _make_data_for_type(pathDocs, pathTensors, include_medicine=include_medicine)
+        testset = None
+        if(pathTestdocs is not None and pathTesttensors is not None):
+            _, __, testset = _make_data_for_type(pathTestdocs, pathTesttensors, include_medicine=include_medicine)
+        summary_args.text_names = MC_TEXT_KEYS_FOR_TYPE
+        summary_args.measurement_names = tensors["measurement_keys"]
+        summary_args.habit_names = tensors["habit_keys"]
+        summary_args.habit_levels = tensors["habit_levels"]
+    else:
+        documents, tensors, data = _make_data_for_direction(pathDocs, pathTensors)
+        testset = None
+        if(pathTestdocs is not None and pathTesttensors is not None):
+            _, __, testset = _make_data_for_direction(pathTestdocs, pathTesttensors)
+        summary_args.text_names = MC_TEXT_KEYS_FOR_DIRECTION + ["p_r_tgtset_explan_seqs_id"]
+        summary_args.measurement_names = []
+        summary_args.habit_names = []
+        summary_args.habit_levels = []
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
@@ -74,7 +90,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.step_subsample = 10
     args.K = 8
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
-    args.n_rh = [len(tensors["habit_levels"][rh]) for rh in range(len(tensors["habit_keys"]))]
+    args.n_rh = [len(summary_args.habit_levels[rh]) for rh in range(len(summary_args.habit_levels))]
     # args.n_rh = []
     args.auto_beta = False
     args.auto_alpha = False
@@ -85,8 +101,8 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.deterministic_coefs = [None] * args.num_steps
     # args.deterministic_coefs = np.linspace(0., 1, args.num_steps).tolist()
 
-    summary_args.full_docs = documents
-    summary_args.full_tensors = tensors
+    # summary_args.full_docs = documents
+    # summary_args.full_tensors = tensors
     summary_args.habitWorstLevels = habitWorstLevels2
     if(include_medicine):
         summary_args.habitWorstLevels += medicineWorstLevels
@@ -95,7 +111,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=True, do_hist_analysis=False)
+    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False, do_hist_analysis=False)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
@@ -105,10 +121,10 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     args = Args()
     summary_args = Args()
 
-    documents, tensors, data = _make_data_1(pathDocs, pathTensors)
+    documents, tensors, data = _make_data_for_type(pathDocs, pathTensors)
     testset = None
     if(pathTestdocs is not None and pathTesttensors is not None):
-        _, __, testset = _make_data_1(pathTestdocs, pathTesttensors)
+        _, __, testset = _make_data_for_type(pathTestdocs, pathTesttensors)
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
@@ -194,13 +210,14 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     wb.save(pathResult.joinpath("accuracy.xlsx"))
 
 
-def _make_data_1(pathDocs, pathTensors, include_medicine=False):
+def _make_data_for_type(pathDocs, pathTensors, include_medicine=False):
     with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
         documents = json.load(f)
     with open(str(pathTensors), 'rb') as f:
         tensors = pickle.load(f)
 
-    morphomesKeys = tensors["tensor_keys"]
+    # morphomesKeys = tensors["tensor_keys"]
+    morphomesKeys = MC_TEXT_KEYS_FOR_TYPE
     measurementKeysHC = tensors["measurement_keys"]
     habitKeysHC = tensors["habit_keys"]
     tensors["habit_levels"] = habitLevels2
@@ -228,6 +245,33 @@ def _make_data_1(pathDocs, pathTensors, include_medicine=False):
     # data = [docs, np.empty([0, 0]), np.empty([0, 0])]
     # data = [[], np.array(measurements), np.empty([0, 0])]
     # data = [[], np.empty([0, 0]), np.array(habits)]
+
+    return documents, tensors, data
+
+
+def _make_data_for_direction(pathDocs, pathTensors):
+    with open(str(pathDocs), "r", encoding="utf_8_sig") as f:
+        documents = json.load(f)
+    with open(str(pathTensors), 'rb') as f:
+        tensors = pickle.load(f)
+
+    morphomesKeys = MC_TEXT_KEYS_FOR_DIRECTION
+    docs = [[] for _ in range(len(morphomesKeys) + 1)]
+    for doc in documents:
+        pid = int(doc["p_seq"])
+        if(pid in tensors["ids"]):
+            idx = tensors["ids"].index(pid)
+            if(tensors["ＧＯＴ（ＡＳＴ）"][idx] > 200):
+                continue
+            for rt, key in enumerate(morphomesKeys):
+                docs[rt].append(doc[key + "_morphomes"])
+            if("p_r_tgtset_explan_seqs_id" in doc and doc["p_r_tgtset_explan_seqs_id"] != ""):
+                seqs = doc["p_r_tgtset_explan_seqs_id"].split(",")
+                seqs = [DICT0[seq] for seq in seqs]
+                docs[-1].append([seqs])
+            else:
+                docs[-1].append([[]])
+    data = [docs, np.empty([0, 0]), np.empty([0, 0])]
 
     return documents, tensors, data
 

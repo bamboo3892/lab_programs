@@ -605,8 +605,9 @@ class MCLDA(LDABase):
 
         # self._make_map(pca, theta, p.joinpath("docs_mapping_by_pca.png"), deta_colors=deta_colors)
         self._make_map(tsne, theta, p.joinpath("docs_mapping_by_tsne.png"), deta_colors=deta_colors, handles=handles)
-        self._make_map(tsne, x_rm.T, p.joinpath("num_data_mapping_by_tsne.png"))
-        self._make_map(pca, x_rm.T, p.joinpath("num_data_mapping_by_pca.png"))
+        if(self.Rm != 0):
+            self._make_map(tsne, x_rm.T, p.joinpath("num_data_mapping_by_tsne.png"))
+            self._make_map(pca, x_rm.T, p.joinpath("num_data_mapping_by_pca.png"))
 
 
     def _make_map(self, model, x, path, data_names=None, deta_colors=None, title=None, handles=None):
@@ -645,16 +646,16 @@ class MCLDA(LDABase):
         ws = wb.create_sheet("num latent topics")
         writeMatrix(ws, [[self._wt_rt[r][k].item() for k in range(self.K)] for r in range(self.Rt)],
                     1, 1,
-                    row_names=summary_args.full_tensors["tensor_keys"],
+                    row_names=summary_args.text_names,
                     column_names=topic_names,
                     rule="databar")
         writeMatrix(ws, [[self._xt_rm[r][k].item() for k in range(self.K)] for r in range(self.Rm)],
                     self.Rt + 3, 1,
-                    row_names=summary_args.full_tensors["measurement_keys"],
+                    row_names=summary_args.measurement_names,
                     rule="databar")
         writeMatrix(ws, [[self._xt_rh[r][k].item() for k in range(self.K)] for r in range(self.Rh)],
                     self.Rt + self.Rm + 4, 1,
-                    row_names=summary_args.full_tensors["habit_keys"],
+                    row_names=summary_args.habit_names,
                     rule="databar")
         writeVector(ws, [torch.sum(self._tpd[:, k]).item() for k in range(self.K)],
                     self.Rt + self.Rm + self.Rh + 5, 2,
@@ -663,34 +664,34 @@ class MCLDA(LDABase):
         ws = wb.create_sheet("cv(with theta)")
         rtn_rt, rtn_rm, rtn_rh = self._get_topic_core_values(False)
         writeMatrix(ws, rtn_rt, 1, 1,
-                    row_names=summary_args.full_tensors["tensor_keys"],
+                    row_names=summary_args.text_names,
                     column_names=topic_names)
         writeMatrix(ws, rtn_rm, self.Rt + 3, 1,
-                    row_names=summary_args.full_tensors["measurement_keys"])
+                    row_names=summary_args.measurement_names)
         writeMatrix(ws, rtn_rh, self.Rt + self.Rm + 4, 1,
-                    row_names=summary_args.full_tensors["habit_keys"])
+                    row_names=summary_args.habit_names)
         addColorScaleRules(ws, 2, self.Rt + self.Rm + self.Rh + 5, 2, self.K + 1, axis=None)
 
         ws = wb.create_sheet("cv(without theta)")
         rtn_rt, rtn_rm, rtn_rh = self._get_topic_core_values(True)
         writeMatrix(ws, rtn_rt, 1, 1,
-                    row_names=summary_args.full_tensors["tensor_keys"],
+                    row_names=summary_args.text_names,
                     column_names=topic_names)
         writeMatrix(ws, rtn_rm, self.Rt + 3, 1,
-                    row_names=summary_args.full_tensors["measurement_keys"])
+                    row_names=summary_args.measurement_names)
         writeMatrix(ws, rtn_rh, self.Rt + self.Rm + 4, 1,
-                    row_names=summary_args.full_tensors["habit_keys"])
+                    row_names=summary_args.habit_names)
         addColorScaleRules(ws, 2, self.Rt + self.Rm + self.Rh + 5, 2, self.K + 1, axis=None)
 
         ws = wb.create_sheet("mu_sigma")
         writeMatrix(ws, mu, 1, 1,
-                    row_names=summary_args.full_tensors["measurement_keys"],
+                    row_names=summary_args.measurement_names,
                     column_names=topic_names)
         writeVector(ws, self.mu_h_rm.cpu().detach().numpy(), 2, self.K + 3, axis="row")
         addColorScaleRules(ws, 2, self.Rm + 1, 2, self.K + 3, axis="column")
         addBorderToMaxCell(ws, 2, self.Rm + 1, 2, self.K + 1, axis="column")
         writeMatrix(ws, sigma, 1, self.K + 5,
-                    row_names=summary_args.full_tensors["measurement_keys"],
+                    row_names=summary_args.measurement_names,
                     column_names=topic_names,
                     rule="colorscale", ruleAxis="column")
         writeVector(ws, self.sigma2_h_rm.pow(0.5).cpu().detach().numpy(), 2, 2 * self.K + 7, axis="row")
@@ -699,9 +700,9 @@ class MCLDA(LDABase):
         ws = wb.create_sheet("rho")
         row = 1
         for r in range(self.Rh):
-            ws.cell(row, 1, summary_args.full_tensors["habit_keys"][r])
+            ws.cell(row, 1, summary_args.habit_names[r])
             writeMatrix(ws, rho[r].T, row, 1,
-                        row_names=summary_args.full_tensors["habit_levels"][r],
+                        row_names=summary_args.habit_levels[r],
                         column_names=topic_names,
                         rule="databar", ruleBoundary=[0., 1.])
             _, counts = torch.unique(self.x_rh[r], return_counts=True)
@@ -713,7 +714,7 @@ class MCLDA(LDABase):
         row += 1
         for r in range(self.Rh):
             wl = summary_args.habitWorstLevels[r]
-            ws.cell(row + r, 1, f'{summary_args.full_tensors["habit_keys"][r]} -> {summary_args.full_tensors["habit_levels"][r][wl]}')
+            ws.cell(row + r, 1, f'{summary_args.habit_names[r]} -> {summary_args.habit_levels[r][wl]}')
             writeVector(ws, rho[r][:, wl], row + r, 2, axis="column")
         addColorScaleRules(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
         addBorderToMaxCell(ws, row, row + self.Rh - 1, 2, self.K + 1, axis="column")
@@ -775,7 +776,7 @@ class MCLDA(LDABase):
         for k in range(self.K):
             ws = wb.create_sheet(f"topic_{k+1}")
             for r in range(self.Rt):
-                ws.cell(1, r + 1, summary_args.full_tensors["tensor_keys"][r])
+                ws.cell(1, r + 1, summary_args.text_names[r])
                 idx = np.argsort(phi[r][k])[::-1]
                 dat = np.array(self.word_dict_rt[r])[idx].tolist()
                 writeVector(ws, dat, 2, r + 1, axis="row", names=None)

@@ -129,11 +129,6 @@ def formSOMPO(pathOriginal, pathFurikaeri, pathNewProgram, pathFormed,
                 nNew += 1
                 continue
 
-            if(firstGuidanceOnly):
-                # 初回以外を除く
-                if(row[a3] != "1"):
-                    continue
-
             review = {}
             for i in range(len(label)):
                 if(label[i] != "" and len(row[i]) != 0):
@@ -181,6 +176,15 @@ def formSOMPO(pathOriginal, pathFurikaeri, pathNewProgram, pathFormed,
             if("p_r_fkr_seqs_id" in targetSorted[i + 1].keys()):
                 targetSorted[i]["p_r_tgtset_explan_seqs_id"] = targetSorted[i + 1]["p_r_fkr_seqs_id"]
                 targetSorted[i]["p_r_tgtset_explan_seqs_text"] = targetSorted[i + 1]["p_r_fkr_seqs_text"]
+
+    if(firstGuidanceOnly):
+        # 初回以外を除く
+        reviews2 = []
+        for review in reviews:
+            if(review["p_num"] == "1"):
+                reviews2.append(review)
+        reviews = reviews2
+        print("{} documents finally loaded".format(len(reviews)))
 
     with open(str(pathFormed), "w", encoding="utf_8_sig") as output:
         json.dump(reviews, output, ensure_ascii=False, indent=2)
