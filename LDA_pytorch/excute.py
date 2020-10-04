@@ -8,6 +8,7 @@ import cv2
 import multiprocessing
 import copy
 import psutil
+import pandas as pd
 
 from main_ubuntu import MC_TEXT_KEYS_FOR_TYPE, MC_TEXT_KEYS_FOR_DIRECTION
 from analysis.analyzeHealthCheck import habitLevels2, habitWorstLevels2, medicineLevels, medicineWorstLevels
@@ -64,19 +65,19 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
 
     include_medicine = False
     if(not forDerection):
-        documents, tensors, data = _make_data_for_type(pathDocs, pathTensors, include_medicine=include_medicine)
+        documents, tensors, data, pids = _make_data_for_type(pathDocs, pathTensors, include_medicine=include_medicine)
         testset = None
         if(pathTestdocs is not None and pathTesttensors is not None):
-            _, __, testset = _make_data_for_type(pathTestdocs, pathTesttensors, include_medicine=include_medicine)
+            _, __, testset, ___ = _make_data_for_type(pathTestdocs, pathTesttensors, include_medicine=include_medicine)
         summary_args.text_names = MC_TEXT_KEYS_FOR_TYPE
         summary_args.measurement_names = tensors["measurement_keys"]
         summary_args.habit_names = tensors["habit_keys"]
         summary_args.habit_levels = tensors["habit_levels"]
     else:
-        documents, tensors, data = _make_data_for_direction(pathDocs, pathTensors)
+        documents, tensors, data, pids = _make_data_for_direction(pathDocs, pathTensors)
         testset = None
         if(pathTestdocs is not None and pathTesttensors is not None):
-            _, __, testset = _make_data_for_direction(pathTestdocs, pathTesttensors)
+            _, __, testset, ___ = _make_data_for_direction(pathTestdocs, pathTesttensors)
         summary_args.text_names = MC_TEXT_KEYS_FOR_DIRECTION + ["p_r_tgtset_explan_seqs_id"]
         summary_args.measurement_names = []
         summary_args.habit_names = []
@@ -86,7 +87,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.modelType = "MCLDA"
     args.random_seed = seed
     args.include_medicine = include_medicine
-    args.num_steps = 200
+    args.num_steps = 10
     args.step_subsample = 10
     args.K = 8
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
@@ -111,7 +112,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    _excute(model_class, args, data, pathResult, summary_args, from_pickle=False, do_hist_analysis=False)
+    _excute(model_class, args, data, pathResult, summary_args, pids=pids, from_pickle=False, do_hist_analysis=False)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 
@@ -121,10 +122,10 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
     args = Args()
     summary_args = Args()
 
-    documents, tensors, data = _make_data_for_type(pathDocs, pathTensors)
+    documents, tensors, data, pids = _make_data_for_type(pathDocs, pathTensors)
     testset = None
     if(pathTestdocs is not None and pathTesttensors is not None):
-        _, __, testset = _make_data_for_type(pathTestdocs, pathTesttensors)
+        _, __, testset, ___ = _make_data_for_type(pathTestdocs, pathTesttensors)
 
     model_class = MCLDA.MCLDA
     args.modelType = "MCLDA"
@@ -174,7 +175,7 @@ def excuteMCLDA_K_range(pathDocs, pathTensors, pathResult, *,
         args2.K = Ks[i]
         args2.random_seed = seeds[i]
         process_args.append([model_class, args2, data, pathResult.joinpath(fnames[i]), summary_args,
-                             testset, False, False, True])
+                             None, testset, False, False, True])
     multiprocessing.set_start_method('spawn')
     psutil.Process().nice(-20)
     processes = 4
@@ -228,6 +229,7 @@ def _make_data_for_type(pathDocs, pathTensors, include_medicine=False):
     docs = [[] for _ in range(len(morphomesKeys))]
     measurements = [[] for _ in range(len(measurementKeysHC))]
     habits = [[] for _ in range(len(habitKeysHC))]
+    pids = []
 
     for doc in documents:
         pid = int(doc["p_seq"])
@@ -241,12 +243,13 @@ def _make_data_for_type(pathDocs, pathTensors, include_medicine=False):
                 measurements[rm].append(tensors[key][idx])
             for rh, key in enumerate(habitKeysHC):
                 habits[rh].append(tensors[key][idx])
+            pids.append(pid)
     data = [docs, np.array(measurements), np.array(habits)]
     # data = [docs, np.empty([0, 0]), np.empty([0, 0])]
     # data = [[], np.array(measurements), np.empty([0, 0])]
     # data = [[], np.empty([0, 0]), np.array(habits)]
 
-    return documents, tensors, data
+    return documents, tensors, data, pids
 
 
 def _make_data_for_direction(pathDocs, pathTensors):
@@ -257,6 +260,8 @@ def _make_data_for_direction(pathDocs, pathTensors):
 
     morphomesKeys = MC_TEXT_KEYS_FOR_DIRECTION
     docs = [[] for _ in range(len(morphomesKeys) + 1)]
+    pids = []
+
     for doc in documents:
         pid = int(doc["p_seq"])
         if(pid in tensors["ids"]):
@@ -271,13 +276,14 @@ def _make_data_for_direction(pathDocs, pathTensors):
                 docs[-1].append([seqs])
             else:
                 docs[-1].append([[]])
+            pids.append(pid)
     data = [docs, np.empty([0, 0]), np.empty([0, 0])]
 
-    return documents, tensors, data
+    return documents, tensors, data, pids
 
 
 def _excute(modelClass, args, data, pathResult, summary_args,
-            testset=None, from_pickle=False, continue_from_pickle=False, do_hist_analysis=False):
+            pids=None, testset=None, from_pickle=False, continue_from_pickle=False, do_hist_analysis=False):
 
     print(f"Model: {args.modelType}  (to {pathResult}) (from pickle: {from_pickle}) (continue from pickle: {continue_from_pickle})")
 
@@ -321,6 +327,13 @@ def _excute(modelClass, args, data, pathResult, summary_args,
     plt.plot([hist["log_probs"] for hist in history])
     plt.savefig(pathResult.joinpath("figs", "probability.png"))
     plt.close()
+
+    """output theta.csv"""
+    if(pids is not None):
+        df = pd.DataFrame(model.theta())
+        df.index = pids
+        df.columns = [f"Topic{k}" for k in range(model.K)]
+        df.to_csv(pathResult.joinpath("theta.csv"))
 
     """accuracy"""
     if(testset is not None):
