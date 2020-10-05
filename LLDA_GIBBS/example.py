@@ -106,7 +106,8 @@ def testLLDA(pathMorphomes, pathTestMorphomes, pathResultFolder, *,
                 if(len(label) == 0 and not noLabelOk):
                     continue
                 full.append(review)
-                docs.append(review["morphomes"])
+                # docs.append(review["morphomes"])
+                docs.append(review["p_r_tgtset_explan_morphomes"])
                 lebels.append(label)
         return full, docs, lebels
 
@@ -171,12 +172,12 @@ def testLLDA(pathMorphomes, pathTestMorphomes, pathResultFolder, *,
         #                     testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
 
         # sompo19
-        # model = LLDA.LLDA_S([0.0, 1.0, 0.5], 0.01, docs, lebels, K=30,
-        #                     labelTypes=["モニタリング", "正しい病識", "適正受診", "適正服薬", "疾病の自己管理", "活動量", "飲料習慣", "間食習慣",
-        #                                 "栄養バランス", "飽和脂肪酸の量", "主菜バランス", "野菜,海藻,きのこ類の量", "塩分量",
-        #                                 "飲酒習慣", "夕食の時間と量", "食事リズム", "喫煙", "疲労回復,ストレス解消", "その他"],
-        #                     randomInit=False,
-        #                     testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
+        model = LLDA.LLDA_S([0.0, 1.0, 0.5], 0.01, docs, lebels, K=30,
+                            labelTypes=["モニタリング", "正しい病識", "適正受診", "適正服薬", "疾病の自己管理", "活動量", "飲料習慣", "間食習慣",
+                                        "栄養バランス", "飽和脂肪酸の量", "主菜バランス", "野菜,海藻,きのこ類の量", "塩分量",
+                                        "飲酒習慣", "夕食の時間と量", "食事リズム", "喫煙", "疲労回復,ストレス解消", "その他"],
+                            randomInit=True,
+                            testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
 
         # sompo6
         # model = LLDA.LLDA_S([0.0, 0.1, 0.0], 0.01, docs, lebels, K=6,
@@ -193,14 +194,14 @@ def testLLDA(pathMorphomes, pathTestMorphomes, pathResultFolder, *,
         #                        testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
 
         # sompo message
-        model = LLDA.LLDA_S([0.0, 1.0, 0.5], 0.01, docs, lebels, K=30,
-                            labelTypes=["モニタリング", "正しい病識", "適正受診", "適正服薬", "疾病の自己管理", "活動量", "飲料習慣", "間食習慣",
-                                        "栄養バランス", "飽和脂肪酸の量", "主菜バランス", "野菜,海藻,きのこ類の量", "塩分量",
-                                        "飲酒習慣", "夕食の時間と量", "食事リズム", "喫煙", "疲労回復,ストレス解消", "その他"],
-                            randomInit=True,
-                            testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
+        # model = LLDA.LLDA_S([0.0, 1.0, 0.5], 0.01, docs, lebels, K=30,
+        #                     labelTypes=["モニタリング", "正しい病識", "適正受診", "適正服薬", "疾病の自己管理", "活動量", "飲料習慣", "間食習慣",
+        #                                 "栄養バランス", "飽和脂肪酸の量", "主菜バランス", "野菜,海藻,きのこ類の量", "塩分量",
+        #                                 "飲酒習慣", "夕食の時間と量", "食事リズム", "喫煙", "疲労回復,ストレス解消", "その他"],
+        #                     randomInit=True,
+        #                     testDocs=testDocs, testLabels=testLabels, w2vModel=w2vModel)
 
-        model.startLearning(50)
+        model.startLearning(100)
     else:
         with open(str(pathResultFolder.joinpath("model.pickle")), mode='rb') as f:
             model = pickle.load(f)
@@ -217,6 +218,12 @@ def testLLDA(pathMorphomes, pathTestMorphomes, pathResultFolder, *,
         text = json.dumps(full, ensure_ascii=False)
         text = text.replace("},", "},\n")
         file1.write(text)
+
+    with open(str(pathResultFolder.joinpath("vectors.csv")), "w", encoding="utf_8_sig") as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerow([""] + [model.getTopicName(k) for k in range(model.K)])
+        for review in full:
+            writer.writerow([review["p_seq"]] + review["theta_d"])
 
     # with open(str(pathResultFolder.joinpath("topic-sentence.csv")), "w", encoding="utf_8_sig") as f5:
     #     writer = csv.writer(f5, lineterminator='\n')

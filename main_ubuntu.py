@@ -25,6 +25,7 @@ import tensorDecomp.makeTensor
 import tensorDecomp.matrixDecomp
 import tensorDecomp.tensorDecomp
 
+import analysis.cca
 import analysis.analyzeHealthCheck
 
 # file paths
@@ -81,9 +82,10 @@ if __name__ == '__main__':
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
     b23 = False  # excute MCLDAnum_only
-    b25 = True  # excute MCLDA for type(torch)
+    b25 = False  # excute MCLDA for type(torch)
     b27 = False  # excute MCLDA for direction(torch)
     b26 = False  # excute MCLDA for each K (torch)
+    b28 = True  # excute CCA
 
     b11 = False  # HC statistics
 
@@ -231,19 +233,24 @@ if __name__ == '__main__':
 
     if(b4):
         f0 = time.time()
-        # # resultLLDA = RESULT.joinpath("p_r_tgtset_explan", "sompo_18", "LLDAS30", "LLDAS30_0")
+        # resultLLDA = RESULT.joinpath("p_r_tgtset_explan", "sompo_18", "LLDAS30", "LLDAS30_0")
         # LLDA_GIBBS.example.testLLDA(MORPHOMES.joinpath("sompo_full003.json"),
         #                             MORPHOMES.joinpath("sompo1_30000.json"),
         #                             resultLLDA,
         #                             w2vModel=gensim.models.Word2Vec.load(str(DICTIONARY.joinpath("ja.bin"))),
         #                             fromPickle=False)
-        resultLLDA = RESULT.joinpath("ano_p_r_message", "sompo_message", "LLDAS30_100", "LLDAS30_1")
-        LLDA_GIBBS.example.testLLDA(MORPHOMES.joinpath("sompo_message.json"),
-                                    MORPHOMES.joinpath("sompo_message_1000.json"),
+        # resultLLDA = RESULT.joinpath("ano_p_r_message", "sompo_message", "LLDAS30_100", "LLDAS30_1")
+        # LLDA_GIBBS.example.testLLDA(MORPHOMES.joinpath("sompo_message.json"),
+        #                             MORPHOMES.joinpath("sompo_message_1000.json"),
+        #                             resultLLDA,
+        #                             w2vModel=gensim.models.Word2Vec.load(str(DICTIONARY.joinpath("ja.bin"))),
+        #                             fromPickle=False)
+        resultLLDA = RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "tmp")
+        LLDA_GIBBS.example.testLLDA(MORPHOMES.joinpath("sompo_first_10000_1.json"),
+                                    MORPHOMES.joinpath("sompo_first_10000_2.json"),
                                     resultLLDA,
-                                    w2vModel=gensim.models.Word2Vec.load(
-                                        str(DICTIONARY.joinpath("ja.bin"))),
-                                    fromPickle=False)
+                                    w2vModel=gensim.models.Word2Vec.load(str(DICTIONARY.joinpath("ja.bin"))),
+                                    fromPickle=True)
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b5):
@@ -402,12 +409,12 @@ if __name__ == '__main__':
         # LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
         #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "K8 step200 seed1"),
         #                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
-        # LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
-        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
-        #                                pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
-                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
                                        pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
+        # LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
+        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
+        #                                pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b27):
@@ -423,6 +430,13 @@ if __name__ == '__main__':
                                                #    RESULT.joinpath("multi_channel", "torch", "MCLDA", "Ks"),
                                                Path("Ks1-20x10"),
                                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
+        print("(processed time: {:<.2f})".format(time.time() - f0))
+
+    if(b28):
+        f0 = time.time()
+        analysis.cca.CCA_between_thetas(RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+                                        RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
+                                        RESULT.joinpath("cca", "tmp"))
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 
