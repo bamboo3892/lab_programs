@@ -434,9 +434,12 @@ if __name__ == '__main__':
 
     if(b28):
         f0 = time.time()
-        analysis.cca.CCA_between_thetas(RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
-                                        RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
-                                        RESULT.joinpath("cca", "tmp"))
+        analysis.cca.CCA_between_thetas(
+            RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
+            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
+            RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+            RESULT.joinpath("cca", "tmp")
+        )
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 

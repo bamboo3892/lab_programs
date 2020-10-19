@@ -332,7 +332,7 @@ def _excute(modelClass, args, data, pathResult, summary_args,
     if(pids is not None):
         df = pd.DataFrame(model.theta())
         df.index = pids
-        df.columns = [f"Topic{k}" for k in range(model.K)]
+        df.columns = [f"Topic{k+1}" for k in range(model.K)]
         df.to_csv(pathResult.joinpath("theta.csv"))
 
     """accuracy"""

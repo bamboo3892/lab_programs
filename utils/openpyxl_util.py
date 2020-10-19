@@ -46,7 +46,7 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
                 matrix_font=None,
                 row_name_font=Font(color="006400"),
                 column_name_font=Font(color="006400"),
-                rule=None, ruleBoundary=None, ruleAxis=None):
+                rule=None, ruleBoundary=None, ruleAxis=None, rule_color=None):
 
     offset_row = row if column_names is None else row + 1
     offset_column = column if row_names is None else column + 1
@@ -68,10 +68,10 @@ def writeMatrix(ws, matrix, row=1, column=1, row_names=None, column_names=None,
 
     if(rule == "databar"):
         addDataBarRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength,
-                        boundary=ruleBoundary, axis=ruleAxis)
+                        color=rule_color, boundary=ruleBoundary, axis=ruleAxis)
     elif(rule == "colorscale"):
         addColorScaleRules(ws, offset_row, offset_row + len(matrix), offset_column, offset_column + maxVecLength,
-                           boundary=ruleBoundary, axis=ruleAxis)
+                           colors=rule_color, boundary=ruleBoundary, axis=ruleAxis)
 
 
 def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, column_names=None,
@@ -123,7 +123,7 @@ def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, colum
 
 
 def addDataBarRules(ws, row1, row2, column1, column2, *,
-                    color="00bfff", boundary=None, axis=None):
+                    color=None, boundary=None, axis=None):
     if(row1 > row2):
         a = row1
         row1 = row2
@@ -132,6 +132,7 @@ def addDataBarRules(ws, row1, row2, column1, column2, *,
         a = column1
         column1 = column2
         column2 = a
+    color = color if color is not None else "00bfff"
 
     if(axis == "column"):
         for row in range(row1, row2 + 1):
@@ -150,6 +151,11 @@ def addDataBarRules(ws, row1, row2, column1, column2, *,
 
 def addColorScaleRules(ws, row1, row2, column1, column2, *,
                        colors=[Color('FFFFFF'), Color('008000')], boundary=None, axis=None):
+    """
+    colors: list of colors. [2] or [3]
+    boundary: list of values. [2]
+    axis: axis to apply rule. 0 or 1
+    """
     if(row1 > row2):
         a = row1
         row1 = row2
@@ -158,6 +164,7 @@ def addColorScaleRules(ws, row1, row2, column1, column2, *,
         a = column1
         column1 = column2
         column2 = a
+    colors = colors if colors is not None else [Color('FFFFFF'), Color('008000')]
 
     if(axis == "column"):
         for row in range(row1, row2 + 1):
@@ -166,11 +173,26 @@ def addColorScaleRules(ws, row1, row2, column1, column2, *,
         for column in range(column1, column2 + 1):
             addColorScaleRules(ws, row1, row2, column, column, colors=colors, boundary=boundary, axis=None)
 
-    area = getAreaLatter(row1, row2, column1, column2)
+    # make rule
     if(boundary is None):
-        rule = ColorScaleRule(start_type="min", start_value=None, start_color=colors[0], end_type="max", end_value=None, end_color=colors[1])
+        if(len(colors) == 2):
+            rule = ColorScaleRule(start_type="min", start_value=None, start_color=colors[0],
+                                  end_type="max", end_value=None, end_color=colors[1])
+        else:
+            rule = ColorScaleRule(start_type="min", start_value=None, start_color=colors[0],
+                                  mid_type="percent", mid_value=50, mid_color=colors[1],
+                                  end_type="max", end_value=None, end_color=colors[2])
     else:
-        rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0], end_type="num", end_value=boundary[1], end_color=colors[1])
+        if(len(colors) == 2):
+            rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0],
+                                  end_type="num", end_value=boundary[1], end_color=colors[1])
+        elif(len(colors) == 3):
+            rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0],
+                                  mid_type="percent", mid_value=50, mid_color=colors[1],
+                                  end_type="num", end_value=boundary[1], end_color=colors[1])
+
+    # apply rule
+    area = getAreaLatter(row1, row2, column1, column2)
     ws.conditional_formatting.add(area, rule)
 
 
