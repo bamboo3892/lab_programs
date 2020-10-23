@@ -29,8 +29,8 @@ def CCA_between_thetas(path_theta1, path_theta2, pathResult):
     wb = openpyxl.Workbook()
     ws = wb[wb.get_sheet_names()[0]]
     ws.title = "構造相関係数"
-    writeMatrix(ws, cca.x_weights_.T, 0 * n + 1, 1, row_names=type_names, column_names=names1, rule="colorscale", rule_color=colors)
-    writeMatrix(ws, cca.y_weights_.T, 1 * n + 3, 1, row_names=type_names, column_names=names2, rule="colorscale", rule_color=colors)
+    writeMatrix(ws, cca.x_weights_.T, 0 * n + 1, 1, row_names=type_names, column_names=names1, rule="colorscale", rule_color=colors, ruleBoundary=[-1., 0., 1.])
+    writeMatrix(ws, cca.y_weights_.T, 1 * n + 3, 1, row_names=type_names, column_names=names2, rule="colorscale", rule_color=colors, ruleBoundary=[-1., 0., 1.])
 
     ws = wb.create_sheet("正準変数間の相関係数")
     aaa = np.corrcoef(cca.x_scores_.T, cca.y_scores_.T)
@@ -46,9 +46,9 @@ def CCA_between_thetas(path_theta1, path_theta2, pathResult):
     cx = (cca.x_loadings_ ** 2).mean(axis=0)  # 内部で標準化されている
     cy = (cca.y_loadings_ ** 2).mean(axis=0)
     writeMatrix(ws, cx[:, None], 0 * n + 1, 1, row_names=type_names, column_names=["寄与率"])
-    writeMatrix(ws, cca.x_loadings_.T, 0 * n + 1, 3, column_names=names1, rule="colorscale", rule_color=colors)
+    writeMatrix(ws, cca.x_loadings_.T, 0 * n + 1, 3, column_names=names1, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
     writeMatrix(ws, cy[:, None], 1 * n + 3, 1, row_names=type_names, column_names=["寄与率"])
-    writeMatrix(ws, cca.y_loadings_.T, 1 * n + 3, 3, column_names=names2, rule="colorscale", rule_color=colors)
+    writeMatrix(ws, cca.y_loadings_.T, 1 * n + 3, 3, column_names=names2, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
 
     ws = wb.create_sheet("交差負荷量")
     x_cross = np.dot(cca.y_weights_.T, corr12.T).T
@@ -56,9 +56,13 @@ def CCA_between_thetas(path_theta1, path_theta2, pathResult):
     rx = (x_cross ** 2).mean(axis=0)
     ry = (y_cross ** 2).mean(axis=0)
     writeMatrix(ws, rx[:, None], 0 * n + 1, 1, row_names=type_names, column_names=["冗長性係数"])
-    writeMatrix(ws, x_cross.T, 0 * n + 1, 3, column_names=names1, rule="colorscale", rule_color=colors)
+    writeMatrix(ws, x_cross.T, 0 * n + 1, 3, column_names=names1, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
     writeMatrix(ws, ry[:, None], 1 * n + 3, 1, row_names=type_names, column_names=["冗長性係数"])
-    writeMatrix(ws, y_cross.T, 1 * n + 3, 3, column_names=names2, rule="colorscale", rule_color=colors)
+    writeMatrix(ws, y_cross.T, 1 * n + 3, 3, column_names=names2, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
+
+    ws = wb.create_sheet("rotation")
+    writeMatrix(ws, cca.x_rotations_.T, 0 * n + 1, 1, row_names=type_names, column_names=names1, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
+    writeMatrix(ws, cca.y_rotations_.T, 1 * n + 3, 1, row_names=type_names, column_names=names2, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
 
     pathResult.mkdir(exist_ok=True, parents=True)
     wb.save(pathResult.joinpath("coefs.xlsx"))

@@ -153,7 +153,7 @@ def addColorScaleRules(ws, row1, row2, column1, column2, *,
                        colors=[Color('FFFFFF'), Color('008000')], boundary=None, axis=None):
     """
     colors: list of colors. [2] or [3]
-    boundary: list of values. [2]
+    boundary: list of values. the same shape as colors
     axis: axis to apply rule. 0 or 1
     """
     if(row1 > row2):
@@ -188,8 +188,8 @@ def addColorScaleRules(ws, row1, row2, column1, column2, *,
                                   end_type="num", end_value=boundary[1], end_color=colors[1])
         elif(len(colors) == 3):
             rule = ColorScaleRule(start_type="num", start_value=boundary[0], start_color=colors[0],
-                                  mid_type="percent", mid_value=50, mid_color=colors[1],
-                                  end_type="num", end_value=boundary[1], end_color=colors[1])
+                                  mid_type="num", mid_value=boundary[1], mid_color=colors[1],
+                                  end_type="num", end_value=boundary[2], end_color=colors[2])
 
     # apply rule
     area = getAreaLatter(row1, row2, column1, column2)
