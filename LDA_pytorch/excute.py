@@ -89,7 +89,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     args.include_medicine = include_medicine
     args.num_steps = 200
     args.step_subsample = 10
-    args.K = 8
+    args.K = 20
     args.D = len(data[0][0]) if len(data[0]) != 0 else (len(data[1][0]) if len(data[1]) != 0 else (len(data[2][0]) if len(data[2]) != 0 else 0))
     args.n_rh = [len(summary_args.habit_levels[rh]) for rh in range(len(summary_args.habit_levels))]
     # args.n_rh = []
@@ -112,7 +112,7 @@ def excuteMCLDA(pathDocs, pathTensors, pathResult, *,
     print(f"coef_alpha:  {args.coef_alpha} (auto: {args.auto_alpha})")
 
     # _excute(model_class, args, data, pathResult, summary_args, testset=testset, from_pickle=False, do_hist_analysis=True)
-    _excute(model_class, args, data, pathResult, summary_args, pids=pids, from_pickle=True, do_hist_analysis=False)
+    _excute(model_class, args, data, pathResult, summary_args, pids=pids, from_pickle=False, do_hist_analysis=False)
     # _excute(model_class, args, data, pathResult, summary_args, continue_from_pickle=True, do_hist_analysis=True)
 
 

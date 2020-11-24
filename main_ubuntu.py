@@ -409,12 +409,12 @@ if __name__ == '__main__':
         # LDA_pytorch.excute.excuteMCLDA(morphomes[2], tensors[2],
         #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "K8 step200 seed1"),
         #                                pathTestdocs=morphomes[3], pathTesttensors=tensors[3])
-        LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
-                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
-                                       pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         # LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
-        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
+        #                                RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1"),
         #                                pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
+        LDA_pytorch.excute.excuteMCLDA(morphomes[6], tensors[6],
+                                       RESULT.joinpath("multi_channel", "torch", "MCLDA", "tmp"),
+                                       pathTestdocs=morphomes[7], pathTesttensors=tensors[7])
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
     if(b27):
@@ -436,8 +436,8 @@ if __name__ == '__main__':
         f0 = time.time()
         analysis.cca.CCA_between_thetas(
             RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
-            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
             RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
             RESULT.joinpath("cca", "tmp")
         )
         print("(processed time: {:<.2f})".format(time.time() - f0))
