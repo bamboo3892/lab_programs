@@ -77,7 +77,7 @@ if __name__ == '__main__':
     b15 = False  # Tucker decomp tensorly (NTD)
 
     b16 = False  # execute sepReviewsToMorphomes for multi channel?
-    b17 = False  # makeTensor2 for multi channel
+    b17 = True  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     b25 = False  # excute MCLDA for type(torch)
     b27 = False  # excute MCLDA for direction(torch)
     b26 = False  # excute MCLDA for each K (torch)
-    b28 = True  # excute CCA
+    b28 = False  # excute CCA
 
     b11 = False  # HC statistics
 
@@ -374,7 +374,7 @@ if __name__ == '__main__':
         f0 = time.time()
         for n in range(len(morphomes)):
             tensorDecomp.makeTensor.makeTensorForMultiChannel(morphomes[n], HEALTH_CHECK_REFINED, tensors[n],
-                                                              MULTI_CHANNEL_KEYS,
+                                                              MC_TEXT_KEYS_FOR_TYPE,
                                                               HC_MEASUREMENT_KEYS, HC_HABIT_KEYS, HC_MEDICINE_KEYS)
             print("")
         print("(processed time: {:<.2f})".format(time.time() - f0))

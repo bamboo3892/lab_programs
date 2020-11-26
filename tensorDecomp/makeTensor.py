@@ -162,24 +162,38 @@ def makeTensorForMultiChannel(pathMorphomes, pathHealthCheckRefined, pathTensorP
     tensors["medicine_keys"] = medicineKeysHC
 
     pids = []
-    pidToHC = []
+    HCbefore = []
+    HCafter = []
     year1 = datetime.timedelta(days=365)
-    for review in reviews:
+    row_nan = df.iloc[0].copy()
+    row_nan.values[:] = None
+    for n, review in enumerate(reviews):
         pid = int(review["p_seq"])
         mid = int(review["m_id"])
 
-        # この対象者の保健指導から一年以内の検診データがあるかどうか
+        # 対応する検診データをみつける
         df1 = df[df["m_id"] == mid]
         if(len(df1) > 0):
+            # この対象者の保健指導から一年前以内の検診データがあるかどうか
             p_date = datetime.datetime.strptime(review["p_s_date"], "%Y-%m-%d")
             df2 = df1[df1["健診受診日"] < p_date]  # 保健指導日より前
-            df2 = df2[df2["健診受診日"] > p_date - year1]  # 保健指導日から1年以内
+            df2 = df2[df2["健診受診日"] > p_date - year1]  # 保健指導日から一年前以内
             if(len(df2) > 0):
                 pids.append(pid)
-                pidToHC.append(df2.sort_values("健診受診日", ascending=False).iloc[0])
+                HCbefore.append(df2.sort_values("健診受診日", ascending=False).iloc[0])
+
+                # この保健指導から一年後以内の検診データがあったら指導後のデータとして追加
+                df3 = df1[df1["健診受診日"] > p_date]  # 保健指導日より後
+                df3 = df3[df3["健診受診日"] < p_date + year1]  # 保健指導日から一年前以内
+                if(len(df3) > 0):
+                    HCafter.append(df3.sort_values("健診受診日", ascending=False).iloc[0])
+                else:
+                    HCafter.append(row_nan)
+
     tensors["ids"] = pids
-    pidToHC = pd.DataFrame(pidToHC)
-    print("{} -> {} docs".format(len(reviews), len(pids)))
+    HCbefore = pd.DataFrame(HCbefore)
+    HCafter = pd.DataFrame(HCafter)
+    print("{} -> {} docs. ({} docs with hc result)".format(len(reviews), len(pids), len(HCafter.dropna(how="all"))))
 
     for morphomesKey in morphomesKeys:
         words = []
@@ -210,11 +224,14 @@ def makeTensorForMultiChannel(pathMorphomes, pathHealthCheckRefined, pathTensorP
         print('\rKey "{}" finished'.format(morphomesKey))
 
     for key in measurementKeysHC:
-        tensors[key] = pidToHC[key].values
+        tensors[key] = HCbefore[key].values
+        tensors[key + "_after"] = HCafter[key].values
     for key in habitKeysHC:
-        tensors[key] = pidToHC[key + "_level"].values
+        tensors[key] = HCbefore[key + "_level"].values
+        tensors[key + "_after"] = HCafter[key + "_level"].values
     for key in medicineKeysHC:
-        tensors[key] = pidToHC[key + "_level"].values
+        tensors[key] = HCbefore[key + "_level"].values
+        tensors[key + "_after"] = HCafter[key + "_level"].values
 
     print("Saving documents")
     with open(str(pathTensorPickle), 'wb') as f:

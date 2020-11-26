@@ -7,7 +7,7 @@ from openpyxl.styles import Font, Color
 from utils.openpyxl_util import writeMatrix, writeVector, addColorScaleRules, addBorderToMaxCell
 
 
-def CCA_between_thetas(path_theta1, path_theta2, pathResult):
+def CCA_between_thetas(path_theta1, path_theta2, pathTensor, pathResult):
     n = 7
 
     data1 = pd.read_csv(path_theta1)
@@ -66,10 +66,7 @@ def CCA_between_thetas(path_theta1, path_theta2, pathResult):
     writeMatrix(ws, cca.x_rotations_.T, 0 * n + 1, 1, row_names=type_names, column_names=names1, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
     writeMatrix(ws, cca.y_rotations_.T, 1 * n + 3, 1, row_names=type_names, column_names=names2, rule="colorscale", rule_color=colors, ruleBoundary=[-1, 0, 1])
 
-    pathResult.mkdir(exist_ok=True, parents=True)
-    wb.save(pathResult.joinpath("coefs.xlsx"))
-
-    # graph
+    # matching
     n_sample = len(cca.x_scores_[:, 0])
     ratio_high = 0.1
     num_high = int(n_sample * ratio_high)
@@ -101,6 +98,9 @@ def CCA_between_thetas(path_theta1, path_theta2, pathResult):
         plt.ylim(-10, 10)
         plt.savefig(pathResult.joinpath(f"scatter_type{t}.png"))
         plt.clf()
+
+    pathResult.mkdir(exist_ok=True, parents=True)
+    wb.save(pathResult.joinpath("result.xlsx"))
 
 
 def nn_matching(score_group1, score_group2, min_range=float("inf")):
