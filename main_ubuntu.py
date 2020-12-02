@@ -77,7 +77,7 @@ if __name__ == '__main__':
     b15 = False  # Tucker decomp tensorly (NTD)
 
     b16 = False  # execute sepReviewsToMorphomes for multi channel?
-    b17 = True  # makeTensor2 for multi channel
+    b17 = False  # makeTensor2 for multi channel
     b18 = False  # excute LDA to individual channel
     b19 = False  # excute MCLDA
     b22 = False  # excute MCLDAnum
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     b25 = False  # excute MCLDA for type(torch)
     b27 = False  # excute MCLDA for direction(torch)
     b26 = False  # excute MCLDA for each K (torch)
-    b28 = False  # excute CCA
+    b28 = True  # excute CCA
 
     b11 = False  # HC statistics
 
@@ -438,6 +438,7 @@ if __name__ == '__main__':
             RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
             RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
             # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
+            tensors[6],
             RESULT.joinpath("cca", "tmp")
         )
         print("(processed time: {:<.2f})".format(time.time() - f0))

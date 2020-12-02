@@ -1,21 +1,37 @@
 import numpy as np
+from scipy import stats
 import pandas as pd
 import matplotlib.pyplot as plt
+import pickle
 import openpyxl
 from sklearn.cross_decomposition import CCA
+from sklearn.linear_model import LogisticRegression
 from openpyxl.styles import Font, Color
-from utils.openpyxl_util import writeMatrix, writeVector, addColorScaleRules, addBorderToMaxCell
+from utils.openpyxl_util import writeMatrix, writeVector, addColorScaleRules, addBorderToMaxCell, paintCells, writePaintedText, drawImage
 
 
-def CCA_between_thetas(path_theta1, path_theta2, pathTensor, pathResult):
+def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
     n = 7
 
     data1 = pd.read_csv(path_theta1)
     data2 = pd.read_csv(path_theta2)
-    pseqs, idx1, idx2 = np.intersect1d(data1.iloc[:, 0].values, data2.iloc[:, 0].values,
-                                       assume_unique=True, return_indices=True)
-    theta1 = data1.iloc[idx1, 1:].values  # [n_samples, n_features1]
-    theta2 = data2.iloc[idx2, 1:].values  # [n_samples, n_features2]
+
+    with open(str(pathTensors), 'rb') as f:
+        tensors = pickle.load(f)
+    measurementKeysHC = tensors["measurement_keys"]
+    habitKeysHC = tensors["habit_keys"]
+    tensors_before = pd.DataFrame({key: tensors[key] for key in measurementKeysHC})
+    tensors_after = pd.DataFrame({key: tensors[key + "_after"] for key in measurementKeysHC})
+    tensors_outcome = tensors_after - tensors_before
+    aaa = ~tensors_outcome.isnull().all(axis=1)
+    tensors_before = tensors_before[aaa]
+    tensors_after = tensors_after[aaa]
+    tensors_outcome = tensors_outcome[aaa]
+
+    pseqs, idx1, idx2 = np.intersect1d(data1.iloc[:, 0].values, data2.iloc[:, 0].values, assume_unique=True, return_indices=True)
+    pseqs, idx3, idxToPID = np.intersect1d(pseqs, np.array(tensors["ids"])[aaa], assume_unique=True, return_indices=True)
+    theta1 = data1.iloc[idx1[idx3], 1:].values  # [n_samples, n_features1]
+    theta2 = data2.iloc[idx2[idx3], 1:].values  # [n_samples, n_features2]
     names1 = data1.columns[1:]
     names2 = data2.columns[1:]
     corr = np.corrcoef(theta1.T, theta2.T)
@@ -70,8 +86,40 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensor, pathResult):
     n_sample = len(cca.x_scores_[:, 0])
     ratio_high = 0.1
     num_high = int(n_sample * ratio_high)
+    pathResult.joinpath("figs").mkdir(exist_ok=True, parents=True)
+
+    def _save_ws(ws, t, idx1, idx2):
+        plt.figure(figsize=(6, 6))
+        plt.scatter(cca.x_scores_[:, t], cca.y_scores_[:, t], c="tab:gray", marker=".")
+        plt.scatter(cca.x_scores_[idx1, t], cca.y_scores_[idx1, t], c="tab:orange", marker=".")
+        plt.scatter(cca.x_scores_[idx2, t], cca.y_scores_[idx2, t], c="tab:blue", marker=".")
+        plt.xlim(-10, 10)
+        plt.ylim(-10, 10)
+        plt.savefig(pathResult.joinpath("figs", f"{ws.title}.png"))
+        plt.close()
+
+        writePaintedText(ws, 1, f"各指導タイプが測定項目にどのような影響を与えたのか(n={len(idx1)})", paintColor="000000")
+        drawImage(ws, pathResult.joinpath("figs", f"{ws.title}.png"), 200, 200, "B3")
+        row = 15
+        writePaintedText(ws, row, "指導前の検診データの比較(保健指導から一年前以内)")
+        _print_compare_two_group(ws, row + 1, tensors_before.iloc[idxToPID[idx1]], tensors_before.iloc[idxToPID[idx2]])
+        row += 7
+        writePaintedText(ws, row, "指導後の検診データの比較(保健指導から一年後以内)")
+        _print_compare_two_group(ws, row + 1, tensors_after.iloc[idxToPID[idx1]], tensors_after.iloc[idxToPID[idx2]])
+        row += 7
+        writePaintedText(ws, row, "指導前後の検査データの変化量の比較")
+        _print_compare_two_group(ws, row + 1, tensors_outcome.iloc[idxToPID[idx1]], tensors_outcome.iloc[idxToPID[idx2]])
+        row += 7
+
+    def _print_compare_two_group(ws, row, values1, values2):
+        r = stats.ttest_ind(values1, values2)
+        writeMatrix(ws, [values1.mean()], row, 1, row_names=["良さそうな指導"], column_names=measurementKeysHC)
+        writeMatrix(ws, [values2.mean()], row + 2, 1, row_names=["悪そうな指導"])
+        writeMatrix(ws, [values1.mean() - values2.mean()], row + 3, 1, row_names=["diff"])
+        writeMatrix(ws, [r[1]], row + 4, 1, row_names=["pvalue"], rule="databar", ruleBoundary=[0, 1])
 
     for t in range(n):
+        # grouping
         score_xy = cca.x_scores_[:, t] * cca.y_scores_[:, t]
         idx_pos = np.array(np.where((score_xy > 0) & (cca.x_scores_[:, t] > 0))).ravel()  # 第１象限
         idx_high_group = idx_pos[np.argsort(score_xy[idx_pos])[-num_high:]]  # 第１象限でxyが大きいやつ
@@ -84,23 +132,41 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensor, pathResult):
         idx_other[idx_low_group] = False
         idx_middle_group = np.array(np.where(idx_other)).ravel()  # それ以外
 
-        idx1, idx2 = nn_matching(cca.x_scores_[idx_high_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.1)
-
         plt.figure(figsize=(16, 12))
-        plt.scatter(cca.x_scores_[idx_high_group, t], cca.y_scores_[idx_high_group, t], c="tab:blue", marker="x")
-        plt.scatter(cca.x_scores_[idx_low_group, t], cca.y_scores_[idx_low_group, t], c="tab:orange", marker="x")
-        plt.scatter(cca.x_scores_[idx_middle_group, t], cca.y_scores_[idx_middle_group, t], c="tab:green", marker="x")
-
-        plt.scatter(cca.x_scores_[idx_high_group[idx1], t], cca.y_scores_[idx_high_group[idx1], t], c="tab:blue", marker="o")
-        plt.scatter(cca.x_scores_[idx_middle_group[idx2], t], cca.y_scores_[idx_middle_group[idx2], t], c="tab:green", marker="o")
-
+        plt.scatter(cca.x_scores_[idx_high_group, t], cca.y_scores_[idx_high_group, t], c="tab:blue", marker=".")
+        plt.scatter(cca.x_scores_[idx_low_group, t], cca.y_scores_[idx_low_group, t], c="tab:orange", marker=".")
+        plt.scatter(cca.x_scores_[idx_middle_group, t], cca.y_scores_[idx_middle_group, t], c="tab:green", marker=".")
         plt.xlim(-10, 10)
         plt.ylim(-10, 10)
-        plt.savefig(pathResult.joinpath(f"scatter_type{t}.png"))
-        plt.clf()
+        plt.savefig(pathResult.joinpath(f"scatter_type{t+1}.png"))
+        plt.close()
+
+        # matching(pos)
+        # idx1, idx2 = nn_matching(cca.x_scores_[idx_high_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.1)
+        idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_high_group], tensors_before.values[idx_middle_group], min_range=0.001)
+        _save_ws(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group[idx1], idx_middle_group[idx2])
+        # matching(neg)
+        # idx1, idx2 = nn_matching(cca.x_scores_[idx_low_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.1)
+        idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_low_group], tensors_before.values[idx_middle_group], min_range=0.001)
+        _save_ws(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group[idx1], idx_middle_group[idx2])
 
     pathResult.mkdir(exist_ok=True, parents=True)
-    wb.save(pathResult.joinpath("result.xlsx"))
+    wb.save(pathResult.joinpath("cca_result.xlsx"))
+
+
+def nn_matching_by_ps(score_group1, score_group2, min_range=float("inf")):
+    """
+    nearest-neighbor matching by propensity score
+    score_group1 : ndarray[n_sample1, n_feature]
+    score_group2 : ndarray[n_sample2, n_feature]
+    """
+    X = np.concatenate([score_group1, score_group2])
+    y = np.zeros(X.shape[0], dtype=int)
+    y[score_group1.shape[0]:] = 1
+    model = LogisticRegression(max_iter=1000).fit(X, y)
+    ps = model.predict_proba(X)[:, 0]
+    idx1, idx2 = nn_matching(ps[:score_group1.shape[0]], ps[score_group1.shape[0]:], min_range=min_range)
+    return idx1, idx2
 
 
 def nn_matching(score_group1, score_group2, min_range=float("inf")):
@@ -133,15 +199,3 @@ def nn_matching(score_group1, score_group2, min_range=float("inf")):
         return indices1, indices2
     else:
         return indices2, indices1
-
-
-def getNearestIdx(lis, num):
-    """
-    概要: リストからある値に最も近い値を返却する関数
-    @param lis: データ配列
-    @param num: 対象値
-    @return 対象値に最も近い要素のインデックス
-    """
-
-    idx = np.abs(np.array(lis) - num).argmin()
-    return idx

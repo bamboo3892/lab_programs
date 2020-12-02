@@ -239,5 +239,31 @@ def doFuncToMaxCell(ws, row1, row2, column1, column2, func, *,
         func(ws.cell(row[i], column[i]))
 
 
+def paintCells(ws, row, column, height, width, color="006400"):
+    fill = openpyxl.styles.PatternFill(fill_type='solid', fgColor=color)
+    for r in range(row, row + height):
+        for c in range(column, column + width):
+            ws.cell(r, c).fill = fill
+
+
+def writePaintedText(ws, row, text, paintWidth=20, textFont=Font(color="ffffff"), paintColor="006400"):
+    paintCells(ws, row, 1, 1, paintWidth, color=paintColor)
+    ws.cell(row, 1, value=text).font = textFont
+
+
 def getAreaLatter(row1, row2, column1, column2):
     return get_column_letter(column1) + str(row1) + ":" + get_column_letter(column2) + str(row2)
+
+
+def drawImage(ws, imagePath, height, width, anker):
+    """
+    draw image in worksheet
+    imagePath: path to the image. Do not delete image until worksheet is saved.
+    height: height
+    width: width
+    anker: The position of the cell to be anchored (string e.g. "A1")
+    """
+    img = openpyxl.drawing.image.Image(str(imagePath))
+    img.height = height
+    img.width = width
+    ws.add_image(img, anker)
