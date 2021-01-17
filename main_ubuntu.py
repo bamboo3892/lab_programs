@@ -439,8 +439,25 @@ if __name__ == '__main__':
             RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
             # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
             tensors[6],
-            RESULT.joinpath("cca", "tmp")
-        )
+            RESULT.joinpath("cca", "tmp01", "tmp_ps"), "ps")
+        analysis.cca.CCA_between_thetas(
+            RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
+            RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
+            tensors[6],
+            RESULT.joinpath("cca", "tmp01", "tmp_cca_score"), "cca_score")
+        analysis.cca.CCA_between_thetas(
+            RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
+            RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
+            tensors[6],
+            RESULT.joinpath("cca", "tmp01", "tmp_each_measure"), "each_measure")
+        analysis.cca.CCA_between_thetas(
+            RESULT.joinpath("multi_channel", "torch", "MCLDA", "first K8 step200 seed1", "theta.csv"),
+            RESULT.joinpath("p_r_tgtset_explan", "sompo_19_first", "LLDAS30", "vectors.csv"),
+            # RESULT.joinpath("multi_channel", "torch", "MCLDA_direction", "K20 seed1", "theta.csv"),
+            tensors[6],
+            RESULT.joinpath("cca", "tmp01", "tmp_random"), "random")
         print("(processed time: {:<.2f})".format(time.time() - f0))
 
 

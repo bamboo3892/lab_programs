@@ -1,3 +1,4 @@
+import random
 import numpy as np
 from scipy import stats
 import pandas as pd
@@ -5,12 +6,16 @@ import matplotlib.pyplot as plt
 import pickle
 import openpyxl
 from sklearn.cross_decomposition import CCA
-from sklearn.linear_model import LogisticRegression
 from openpyxl.styles import Font, Color
-from utils.openpyxl_util import writeMatrix, writeVector, addColorScaleRules, addBorderToMaxCell, paintCells, writePaintedText, drawImage
+
+from utils.openpyxl_util import writeMatrix, writeVector, addColorScaleRules, addBorderToMaxCell, paintCells, writePaintedText, drawImage, addDataBarRules
+from utils.matching_util import nn_matching, nn_matching_by_ps
 
 
-def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
+def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult, matching_type):
+    """
+    matching_type: "ps" or "cca_score" or "each_measure", "random"
+    """
     n = 7
 
     data1 = pd.read_csv(path_theta1)
@@ -59,8 +64,6 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
     # writeMatrix(ws, c_corr[:, None], 1, 5, row_names=type_names, rule="databar", ruleBoundary=[0, 1])
 
     ws = wb.create_sheet("正準負荷量")
-    # cx = (cca.x_loadings_ ** 2).sum(axis=0) / (theta1.var(axis=0).sum())
-    # cy = (cca.y_loadings_ ** 2).sum(axis=0) / (theta2.var(axis=0).sum())
     cx = (cca.x_loadings_ ** 2).mean(axis=0)  # 内部で標準化されている
     cy = (cca.y_loadings_ ** 2).mean(axis=0)
     writeMatrix(ws, cx[:, None], 0 * n + 1, 1, row_names=type_names, column_names=["寄与率"])
@@ -98,7 +101,7 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
         plt.savefig(pathResult.joinpath("figs", f"{ws.title}.png"))
         plt.close()
 
-        writePaintedText(ws, 1, f"各指導タイプが測定項目にどのような影響を与えたのか(n={len(idx1)})", paintColor="000000")
+        writePaintedText(ws, 1, f"各指導方法が測定項目にどのような影響を与えたのか(n={len(idx1)})", paintColor="000000")
         drawImage(ws, pathResult.joinpath("figs", f"{ws.title}.png"), 200, 200, "B3")
         row = 15
         writePaintedText(ws, row, "指導前の検診データの比較(保健指導から一年前以内)")
@@ -109,14 +112,54 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
         row += 7
         writePaintedText(ws, row, "指導前後の検査データの変化量の比較")
         _print_compare_two_group(ws, row + 1, tensors_outcome.iloc[idxToPID[idx1]], tensors_outcome.iloc[idxToPID[idx2]])
-        row += 7
 
     def _print_compare_two_group(ws, row, values1, values2):
         r = stats.ttest_ind(values1, values2)
-        writeMatrix(ws, [values1.mean()], row, 1, row_names=["良さそうな指導"], column_names=measurementKeysHC)
-        writeMatrix(ws, [values2.mean()], row + 2, 1, row_names=["悪そうな指導"])
+        writeMatrix(ws, [values1.mean()], row, 1, row_names=["指導あり"], column_names=measurementKeysHC)
+        writeMatrix(ws, [values2.mean()], row + 2, 1, row_names=["他の指導"])
         writeMatrix(ws, [values1.mean() - values2.mean()], row + 3, 1, row_names=["diff"])
         writeMatrix(ws, [r[1]], row + 4, 1, row_names=["pvalue"], rule="databar", ruleBoundary=[0, 1])
+
+    def _save_ws_each_measure(ws, t, idx_high_group, idx_middle_group):
+        # calc matrix
+        n_samples = np.zeros([tensors_before.shape[1]])
+        before = np.zeros([tensors_before.shape[1], 4])
+        after = np.zeros([tensors_before.shape[1], 4])
+        outcome = np.zeros([tensors_before.shape[1], 4])
+        for i in range(tensors_before.shape[1]):
+            idx1, idx2 = nn_matching(tensors_before.values[idx_high_group, i], tensors_before.values[idx_middle_group, i],
+                                     min_range=0)
+            #  min_range=tensors_before.values[:, i].std() / 100)
+            idx1 = idx_high_group[idx1]
+            idx2 = idx_middle_group[idx2]
+            n_samples[i] = len(idx1)
+            before[i, 0] = tensors_before.values[idx1, i].mean()
+            before[i, 1] = tensors_before.values[idx2, i].mean()
+            before[i, 2] = tensors_before.values[idx1, i].mean() - tensors_before.values[idx2, i].mean()
+            before[i, 3] = stats.ttest_ind(tensors_before.values[idx1, i], tensors_before.values[idx2, i])[1]
+            after[i, 0] = tensors_after.values[idx1, i].mean()
+            after[i, 1] = tensors_after.values[idx2, i].mean()
+            after[i, 2] = tensors_after.values[idx1, i].mean() - tensors_after.values[idx2, i].mean()
+            after[i, 3] = stats.ttest_ind(tensors_after.values[idx1, i], tensors_after.values[idx2, i])[1]
+            outcome[i, 0] = tensors_outcome.values[idx1, i].mean()
+            outcome[i, 1] = tensors_outcome.values[idx2, i].mean()
+            outcome[i, 2] = tensors_outcome.values[idx1, i].mean() - tensors_outcome.values[idx2, i].mean()
+            outcome[i, 3] = stats.ttest_ind(tensors_outcome.values[idx1, i], tensors_outcome.values[idx2, i])[1]
+
+        writePaintedText(ws, 1, f"各指導方法が測定項目にどのような影響を与えたのか(n={len(idx1)})", paintColor="000000")
+        writeMatrix(ws, n_samples[None, :], 3, 1, row_names=["n_samples"], column_names=measurementKeysHC)
+        row = 6
+        writePaintedText(ws, row, "指導前の検診データの比較(保健指導から一年前以内)")
+        writeMatrix(ws, before.T, row + 1, 1, row_names=["指導あり", "他の指導", "diff", "pvalue"], column_names=measurementKeysHC)
+        addDataBarRules(ws, row + 5, row + 5, 2, len(measurementKeysHC) + 2, boundary=[0, 1], axis="column")
+        row += 7
+        writePaintedText(ws, row, "指導後の検診データの比較(保健指導から一年後以内)")
+        writeMatrix(ws, after.T, row + 1, 1, row_names=["指導あり", "他の指導", "diff", "pvalue"], column_names=measurementKeysHC)
+        addDataBarRules(ws, row + 5, row + 5, 2, len(measurementKeysHC) + 2, boundary=[0, 1], axis="column")
+        row += 7
+        writePaintedText(ws, row, "指導前後の検査データの変化量の比較")
+        writeMatrix(ws, outcome.T, row + 1, 1, row_names=["指導あり", "他の指導", "diff", "pvalue"], column_names=measurementKeysHC)
+        addDataBarRules(ws, row + 5, row + 5, 2, len(measurementKeysHC) + 2, boundary=[0, 1], axis="column")
 
     for t in range(n):
         # grouping
@@ -141,61 +184,25 @@ def CCA_between_thetas(path_theta1, path_theta2, pathTensors, pathResult):
         plt.savefig(pathResult.joinpath(f"scatter_type{t+1}.png"))
         plt.close()
 
-        # matching(pos)
-        # idx1, idx2 = nn_matching(cca.x_scores_[idx_high_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.1)
-        idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_high_group], tensors_before.values[idx_middle_group], min_range=0.001)
-        _save_ws(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group[idx1], idx_middle_group[idx2])
-        # matching(neg)
-        # idx1, idx2 = nn_matching(cca.x_scores_[idx_low_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.1)
-        idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_low_group], tensors_before.values[idx_middle_group], min_range=0.001)
-        _save_ws(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group[idx1], idx_middle_group[idx2])
+        # matching
+        if(matching_type == "ps"):
+            idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_high_group], tensors_before.values[idx_middle_group], min_range=0.00001, model_name="LR")
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group[idx1], idx_middle_group[idx2])
+            idx1, idx2 = nn_matching_by_ps(tensors_before.values[idx_low_group], tensors_before.values[idx_middle_group], min_range=0.00001, model_name="LR")
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group[idx1], idx_middle_group[idx2])
+        elif(matching_type == "cca_score"):
+            idx1, idx2 = nn_matching(cca.x_scores_[idx_high_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.01)
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group[idx1], idx_middle_group[idx2])
+            idx1, idx2 = nn_matching(cca.x_scores_[idx_low_group, t], cca.x_scores_[idx_middle_group, t], min_range=0.01)
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group[idx1], idx_middle_group[idx2])
+        elif(matching_type == "each_measure"):
+            _save_ws_each_measure(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group, idx_middle_group)
+            _save_ws_each_measure(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group, idx_middle_group)
+        elif(matching_type == "random"):
+            idx2 = random.sample(idx_middle_group.tolist(), len(idx_high_group))
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_pos"), t, idx_high_group, idx2)
+            idx2 = random.sample(idx_middle_group.tolist(), len(idx_low_group))
+            _save_ws(wb.create_sheet(f"matching_type{t+1}_neg"), t, idx_low_group, idx2)
 
     pathResult.mkdir(exist_ok=True, parents=True)
     wb.save(pathResult.joinpath("cca_result.xlsx"))
-
-
-def nn_matching_by_ps(score_group1, score_group2, min_range=float("inf")):
-    """
-    nearest-neighbor matching by propensity score
-    score_group1 : ndarray[n_sample1, n_feature]
-    score_group2 : ndarray[n_sample2, n_feature]
-    """
-    X = np.concatenate([score_group1, score_group2])
-    y = np.zeros(X.shape[0], dtype=int)
-    y[score_group1.shape[0]:] = 1
-    model = LogisticRegression(max_iter=1000).fit(X, y)
-    ps = model.predict_proba(X)[:, 0]
-    idx1, idx2 = nn_matching(ps[:score_group1.shape[0]], ps[score_group1.shape[0]:], min_range=min_range)
-    return idx1, idx2
-
-
-def nn_matching(score_group1, score_group2, min_range=float("inf")):
-    """
-    nearest-neighbor matching
-    score_group1 : ndarray[n_sample1]
-    score_group2 : ndarray[n_sample2]
-    """
-    reversed = False
-    if(len(score_group1) > len(score_group2)):
-        tmp = score_group1
-        score_group1 = score_group2
-        score_group2 = tmp
-        reversed = True
-
-    indices1 = []
-    indices2 = []
-    matched = np.full_like(score_group2, False, dtype="bool")
-    for idx1 in range(len(score_group1)):
-        idx_sorted = np.abs(score_group2 - score_group1[idx1]).argsort()
-        for idx2 in idx_sorted:
-            if(np.abs(score_group1[idx1] - score_group2[idx2]) > min_range):
-                break
-            if(not matched[idx2]):  # マッチング成功
-                indices1.append(idx1)
-                indices2.append(idx2)
-                break
-
-    if(not reversed):
-        return indices1, indices2
-    else:
-        return indices2, indices1
