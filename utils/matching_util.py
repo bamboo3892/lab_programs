@@ -20,6 +20,7 @@ def nn_matching_by_ps(score_group1, score_group2, min_range=float("inf"), model_
         y = np.zeros(X.shape[0], dtype=int)
         y[score_group1.shape[0]:] = 1
         model = LogisticRegression(max_iter=1000).fit(X, y)
+        # model = LogisticRegression(max_iter=1000, fit_intercept=False).fit(X, y)
         ps = model.predict_proba(X)[:, 0]
     elif(model_name == "NN2"):
         X = np.concatenate([score_group1, score_group2])

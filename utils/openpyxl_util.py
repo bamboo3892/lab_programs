@@ -122,6 +122,17 @@ def writeSortedMatrix(ws, matrix, axis=0, row=1, column=1, row_names=None, colum
                     row_name_font=name_font, rule=rule, ruleBoundary=ruleBoundary, ruleAxis=ruleAxis)
 
 
+def addComments(ws, comments, row, column, author=None):
+    for i in range(len(comments)):
+        vec = comments[i]
+        for j in range(len(vec)):
+            addComment(ws, vec[j], row + i, column + j, author=author)
+
+
+def addComment(ws, comment, row, column, author=None):
+    ws.cell(row, column).comment = openpyxl.comments.Comment(comment, author)
+
+
 def addDataBarRules(ws, row1, row2, column1, column2, *,
                     color=None, boundary=None, axis=None):
     if(row1 > row2):
